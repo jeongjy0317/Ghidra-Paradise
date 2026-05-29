@@ -1696,14 +1696,6 @@ final class ParadiseGraphProvider extends ComponentProvider {
 			return height;
 		}
 
-		private void sortRow(List<ParadiseGraphBlock> row,
-				Map<ParadiseGraphBlock, Integer> branchOrder) {
-			row.sort(Comparator
-					.comparingInt((ParadiseGraphBlock block) ->
-						branchOrder.getOrDefault(block, Integer.MAX_VALUE))
-					.thenComparing(ParadiseGraphBlock::start));
-		}
-
 		private Map<ParadiseGraphBlock, Integer> branchOrder(ParadiseGraph graph) {
 			Map<ParadiseGraphBlock, Integer> order = new HashMap<>();
 			for (ParadiseGraphEdge edge : graph.edges()) {

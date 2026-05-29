@@ -752,13 +752,6 @@ final class ParadiseDecompilerProvider extends ComponentProvider {
 		return button;
 	}
 
-	private JSeparator toolbarSeparator() {
-		JSeparator separator = new JSeparator(SwingConstants.VERTICAL);
-		separator.setMaximumSize(new Dimension(6, 18));
-		separator.setPreferredSize(new Dimension(6, 18));
-		return separator;
-	}
-
 	private void toggleRawClean() {
 		PseudocodeTab tab = currentTab();
 		if (tab == null || tab.result == null) {
@@ -772,23 +765,6 @@ final class ParadiseDecompilerProvider extends ComponentProvider {
 		updateAuxPanels(tab.result);
 		contextChanged();
 		focusText();
-	}
-
-	private JPanel actionGroup(String title, JComponent... components) {
-		JPanel group = new JPanel();
-		group.setLayout(new BoxLayout(group, BoxLayout.Y_AXIS));
-		group.setBorder(BorderFactory.createTitledBorder(title));
-		group.setAlignmentX(Component.LEFT_ALIGNMENT);
-		for (JComponent component : components) {
-			component.setAlignmentX(Component.LEFT_ALIGNMENT);
-			component.setMaximumSize(new Dimension(Integer.MAX_VALUE,
-				component.getPreferredSize().height));
-			group.add(component);
-			group.add(Box.createVerticalStrut(3));
-		}
-		group.setMaximumSize(new Dimension(Integer.MAX_VALUE, group.getPreferredSize().height));
-		headerGroups.add(group);
-		return group;
 	}
 
 	private JPanel compactSearchPanel() {

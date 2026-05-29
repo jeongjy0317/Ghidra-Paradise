@@ -2159,10 +2159,6 @@ final class ParadiseDecompilerEngine implements AutoCloseable {
 		return args;
 	}
 
-	private void appendSyntheticLine(StringBuilder builder, String line) {
-		builder.append(line).append('\n');
-	}
-
 	private void appendLineWithRemappedSpans(StringBuilder builder, List<ParadiseTokenSpan> destination,
 			List<ParadiseTokenSpan> source, CodeLine sourceLine, String newLine) {
 		int newStart = builder.length();
