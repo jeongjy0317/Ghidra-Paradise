@@ -1,0 +1,11 @@
+.DS_Store
+
+# Gradle and build output
+.gradle/
+build/
+dist/
+
+# Local Ghidra/user workspace files
+*.rep/
+*.gpr
+*.gpr.lock
