@@ -309,14 +309,6 @@ final class ParadiseDecompilerProvider extends ComponentProvider {
 		return true;
 	}
 
-	void closeCurrentTab() {
-		PseudocodeTab tab = currentTab();
-		if (tab == null) {
-			return;
-		}
-		closeTab(tab);
-	}
-
 	void resetLayout() {
 		for (PseudocodeTab tab : new ArrayList<>(tabMap.values())) {
 			removeTab(tab);
@@ -383,10 +375,6 @@ final class ParadiseDecompilerProvider extends ComponentProvider {
 			}
 		}
 		return null;
-	}
-
-	void applyFontSize() {
-		applyOptionsToOpenTabs();
 	}
 
 	void applyOptionsToOpenTabs() {

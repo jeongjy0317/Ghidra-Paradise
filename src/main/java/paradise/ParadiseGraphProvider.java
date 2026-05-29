@@ -1696,21 +1696,6 @@ final class ParadiseGraphProvider extends ComponentProvider {
 			return height;
 		}
 
-		private Map<ParadiseGraphBlock, Integer> branchOrder(ParadiseGraph graph) {
-			Map<ParadiseGraphBlock, Integer> order = new HashMap<>();
-			for (ParadiseGraphEdge edge : graph.edges()) {
-				int value = switch (edge.kind()) {
-					case FALSE_BRANCH -> 0;
-					case TRUE_BRANCH -> 1;
-					default -> Integer.MAX_VALUE;
-				};
-				if (value != Integer.MAX_VALUE) {
-					order.merge(edge.target(), value, Math::min);
-				}
-			}
-			return order;
-		}
-
 		private void assignLayers(ParadiseGraph graph) {
 			for (ParadiseGraphBlock block : graph.blocks()) {
 				block.setLayer(-1);
@@ -3088,10 +3073,6 @@ final class ParadiseGraphEdge {
 
 	ParadiseGraphEdgeKind kind() {
 		return kind;
-	}
-
-	void setKind(ParadiseGraphEdgeKind kind) {
-		this.kind = kind;
 	}
 
 	List<Point2D.Double> points() {
