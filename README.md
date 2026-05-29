@@ -46,6 +46,7 @@ The repository is currently developed against the Homebrew Ghidra 12.1 layout on
 ## Build
 
 Set `GHIDRA_INSTALL_DIR` to your Ghidra installation, or pass it with `-P`.
+This path is machine-specific. It depends on your OS, install method, Ghidra version, and local install location. The Homebrew path below is only an example; use the directory on your system that contains `support/buildExtension.gradle`.
 
 ```sh
 /opt/homebrew/Cellar/ghidra/12.1/libexec/support/gradle/gradlew \
