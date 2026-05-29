@@ -1,0 +1,21 @@
+def ghidraInstallDir = System.env.GHIDRA_INSTALL_DIR
+
+if (!ghidraInstallDir && project.hasProperty('GHIDRA_INSTALL_DIR')) {
+	ghidraInstallDir = project.property('GHIDRA_INSTALL_DIR')
+}
+
+if (!ghidraInstallDir) {
+	ghidraInstallDir = '/opt/homebrew/Cellar/ghidra/12.1'
+}
+
+def ghidraInstallFile = file(ghidraInstallDir)
+if (!file("${ghidraInstallFile}/support/buildExtension.gradle").exists() &&
+		file("${ghidraInstallFile}/libexec/support/buildExtension.gradle").exists()) {
+	ghidraInstallDir = file("${ghidraInstallFile}/libexec").absolutePath
+}
+
+apply from: "${ghidraInstallDir}/support/buildExtension.gradle"
+
+repositories {
+	mavenCentral()
+}
