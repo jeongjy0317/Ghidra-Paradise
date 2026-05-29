@@ -136,7 +136,6 @@ src/main/java/paradise/
 extension.properties                Ghidra extension metadata
 build.gradle                        Ghidra extension build configuration
 Module.manifest                     Ghidra module manifest
-testbed/                            Local decompile/export test artifacts
 ```
 
 ## Development Notes
