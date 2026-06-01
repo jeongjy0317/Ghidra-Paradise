@@ -1473,6 +1473,7 @@ public class ParadisePlugin extends ProgramPlugin {
 
 		JPanel generalPanel = settingsPanel();
 		GridBagConstraints generalGc = settingsConstraints();
+		addSectionHeader(generalPanel, generalGc, "General");
 		addOption(generalPanel, generalGc, optionSection("Input and Sync", 2, hotkeys,
 			syncListing, followExternal, highlightUses));
 		addOption(generalPanel, generalGc, optionSection("Navigation", 2, newTabs,
@@ -1483,6 +1484,7 @@ public class ParadisePlugin extends ProgramPlugin {
 
 		JPanel pseudocodePanel = settingsPanel();
 		GridBagConstraints pseudocodeGc = settingsConstraints();
+		addSectionHeader(pseudocodePanel, pseudocodeGc, "Pseudocode");
 		addOption(pseudocodePanel, pseudocodeGc, optionSection("Appearance", 2,
 			labeledField("Theme preset:", themePreset),
 			labeledField("Font size:", fontSize)));
@@ -1494,6 +1496,7 @@ public class ParadisePlugin extends ProgramPlugin {
 
 		JPanel cleanupPanel = settingsPanel();
 		GridBagConstraints cleanupGc = settingsConstraints();
+		addSectionHeader(cleanupPanel, cleanupGc, "Cleanup");
 		addOption(cleanupPanel, cleanupGc, optionSection("Clean C", 2, cleanC, cleanLiterals,
 			typeAliases, addressComments));
 		addOption(cleanupPanel, cleanupGc, optionSection("Cleanup Rules", 2,
@@ -1503,6 +1506,7 @@ public class ParadisePlugin extends ProgramPlugin {
 
 		JPanel viewsPanel = settingsPanel();
 		GridBagConstraints viewsGc = settingsConstraints();
+		addSectionHeader(viewsPanel, viewsGc, "Views");
 		addOption(viewsPanel, viewsGc, optionSection("Analysis Pane", 1, auxPanels));
 		addOption(viewsPanel, viewsGc, optionSection("Visible Tabs", 3, viewXrefs,
 			viewLocals, viewTrace, viewCalls, viewStrings, viewDiff, viewDrafts,
@@ -1511,12 +1515,14 @@ public class ParadisePlugin extends ProgramPlugin {
 
 		JPanel exportPanel = settingsPanel();
 		GridBagConstraints exportGc = settingsConstraints();
+		addSectionHeader(exportPanel, exportGc, "Export");
 		addOption(exportPanel, exportGc, optionSection("Output", 2,
 			labeledField("Export mode:", exportMode), metadata));
 		addSettingsFiller(exportPanel, exportGc);
 
 		JPanel layoutPanel = settingsPanel();
 		GridBagConstraints layoutGc = settingsConstraints();
+		addSectionHeader(layoutPanel, layoutGc, "Layout");
 		addOption(layoutPanel, layoutGc, optionSection("Window Layout", 1,
 			new JLabel("Restore Paradise panes, tabs, theme, and cleanup defaults."),
 			resetLayout));
@@ -1690,6 +1696,13 @@ public class ParadisePlugin extends ProgramPlugin {
 		gc.fill = GridBagConstraints.HORIZONTAL;
 		panel.add(component, gc);
 		gc.gridy++;
+	}
+
+	private void addSectionHeader(JPanel panel, GridBagConstraints gc, String title) {
+		JLabel label = new JLabel(title);
+		label.setFont(label.getFont().deriveFont(java.awt.Font.BOLD, 18f));
+		label.setBorder(BorderFactory.createEmptyBorder(0, 3, 10, 0));
+		addOption(panel, gc, label);
 	}
 
 	private JPanel settingsPanel() {
