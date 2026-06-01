@@ -89,6 +89,8 @@ final class ParadiseDecompilerProvider extends ComponentProvider {
 	private final DefaultTableModel callsModel =
 		model("Direction", "Address", "Function", "Type", "Preview");
 	private final DefaultTableModel stringsModel = model("Use", "String", "Preview");
+	private final DefaultTableModel base64StringsModel =
+		model("Use", "String", "Decoded", "Kind");
 	private final DefaultTableModel cleanupsModel = model("Kind", "Cleanup", "Effect");
 	private final DefaultTableModel diffModel = model("Line", "Raw Ghidra", "Paradise Clean C");
 	private final DefaultTableModel draftsModel = model("Kind", "Target", "Suggestion");
@@ -102,6 +104,7 @@ final class ParadiseDecompilerProvider extends ComponentProvider {
 	private final JTable localsTable = table(localsModel);
 	private final JTable callsTable = table(callsModel);
 	private final JTable stringsTable = table(stringsModel);
+	private final JTable base64StringsTable = table(base64StringsModel);
 	private final JTable cleanupsTable = table(cleanupsModel);
 	private final JTable diffTable = table(diffModel);
 	private final JTable draftsTable = table(draftsModel);
@@ -112,7 +115,9 @@ final class ParadiseDecompilerProvider extends ComponentProvider {
 	private final JScrollPane localsPanel = new JScrollPane(localsTable);
 	private final JScrollPane tracePanel = new JScrollPane(traceTable);
 	private final JScrollPane callsPanel = new JScrollPane(callsTable);
-	private final JScrollPane stringsPanel = new JScrollPane(stringsTable);
+	private final JScrollPane stringsOverviewPanel = new JScrollPane(stringsTable);
+	private final JScrollPane base64StringsPanel = new JScrollPane(base64StringsTable);
+	private final JTabbedPane stringsPanel = createStringsPanel();
 	private final JScrollPane diffPanel = new JScrollPane(diffTable);
 	private final JScrollPane draftsPanel = new JScrollPane(draftsTable);
 	private final JScrollPane suggestionsPanel = new JScrollPane(suggestionsTable);
@@ -122,6 +127,7 @@ final class ParadiseDecompilerProvider extends ComponentProvider {
 	private List<ParadiseXrefRow> xrefRows = List.of();
 	private List<CallRow> callRows = List.of();
 	private List<StringRow> stringRows = List.of();
+	private List<Base64StringRow> base64StringRows = List.of();
 	private List<SuggestionRow> suggestionRows = List.of();
 	private List<TriageRow> triageRows = List.of();
 	private List<TraceRow> traceRows = List.of();
@@ -668,6 +674,13 @@ final class ParadiseDecompilerProvider extends ComponentProvider {
 		cleanupsPanel.add(cleanupsSummaryLabel, BorderLayout.NORTH);
 		cleanupsPanel.add(new JScrollPane(cleanupsTable), BorderLayout.CENTER);
 		return cleanupsPanel;
+	}
+
+	private JTabbedPane createStringsPanel() {
+		JTabbedPane pane = new JTabbedPane();
+		pane.addTab("Overview", stringsOverviewPanel);
+		pane.addTab("Base64", base64StringsPanel);
+		return pane;
 	}
 
 	private void rebuildAuxTabs() {
@@ -1711,16 +1724,21 @@ final class ParadiseDecompilerProvider extends ComponentProvider {
 		}
 		styleTabbedPane(tabs, dark, panelBg, text);
 		styleTabbedPane(auxTabs, dark, panelBg, text);
+		styleTabbedPane(stringsPanel, dark, panelBg, text);
 		styleTable(xrefsTable, dark);
 		styleTable(localsTable, dark);
 		styleTable(callsTable, dark);
 		styleTable(stringsTable, dark);
+		styleTable(base64StringsTable, dark);
 		styleTable(diffTable, dark);
 		styleTable(draftsTable, dark);
 		styleTable(suggestionsTable, dark);
 		styleTable(triageTable, dark);
 		styleTable(traceTable, dark);
 		styleTable(cleanupsTable, dark);
+		setColumnWidth(stringsTable, 0, 92);
+		setColumnWidth(base64StringsTable, 0, 92);
+		setColumnWidth(base64StringsTable, 3, 70);
 		setColumnWidth(diffTable, 0, 52);
 		setColumnWidth(draftsTable, 0, 78);
 		setColumnWidth(draftsTable, 1, 118);
@@ -1925,6 +1943,7 @@ final class ParadiseDecompilerProvider extends ComponentProvider {
 		fill(localsModel);
 		fill(callsModel);
 		fill(stringsModel);
+		fill(base64StringsModel);
 		fill(cleanupsModel);
 		fill(diffModel);
 		fill(draftsModel);
@@ -1935,6 +1954,7 @@ final class ParadiseDecompilerProvider extends ComponentProvider {
 		xrefRows = List.of();
 		callRows = List.of();
 		stringRows = List.of();
+		base64StringRows = List.of();
 		suggestionRows = List.of();
 		triageRows = List.of();
 		traceRows = List.of();
@@ -2038,7 +2058,12 @@ final class ParadiseDecompilerProvider extends ComponentProvider {
 		stringRows = List.copyOf(rows.values());
 		for (StringRow row : stringRows) {
 			stringsModel.addRow(new Object[] { row.useAddress(), row.stringAddress(),
-				row.preview() });
+				preview(row.value(), 200) });
+		}
+		base64StringRows = base64StringRows(stringRows);
+		for (Base64StringRow row : base64StringRows) {
+			base64StringsModel.addRow(new Object[] { row.useAddress(), row.encodedPreview(),
+				row.decodedPreview(), row.kind() });
 		}
 	}
 
@@ -2946,7 +2971,7 @@ final class ParadiseDecompilerProvider extends ComponentProvider {
 		ParadiseStringUtil.ParadiseString string =
 			ParadiseStringUtil.stringAt(program, stringAddress);
 		return string == null ? null : new StringRow(useAddress, string.address(),
-			preview(string.value(), 200));
+			string.value());
 	}
 
 	private void addRenderedStringRows(Map<String, StringRow> rows, ParadiseDecompileResult result) {
@@ -2966,13 +2991,136 @@ final class ParadiseDecompilerProvider extends ComponentProvider {
 			if (value == null || value.isBlank()) {
 				continue;
 			}
-			addStringRow(rows, new StringRow(span.address(), span.address(), preview(value, 200)));
+			addStringRow(rows, new StringRow(span.address(), span.address(), value));
 		}
 	}
 
 	private void addStringRow(Map<String, StringRow> rows, StringRow row) {
-		String key = Objects.toString(row.stringAddress(), "") + "\u0000" + row.preview();
+		String key = Objects.toString(row.stringAddress(), "") + "\u0000" + row.value();
 		rows.putIfAbsent(key, row);
+	}
+
+	private List<Base64StringRow> base64StringRows(List<StringRow> rows) {
+		List<Base64StringRow> candidates = new ArrayList<>();
+		Set<String> seen = new HashSet<>();
+		for (StringRow row : rows) {
+			Base64StringRow candidate = base64StringRow(row);
+			if (candidate == null) {
+				continue;
+			}
+			String key = Objects.toString(candidate.stringAddress(), "") + "\u0000" +
+				candidate.encoded();
+			if (seen.add(key)) {
+				candidates.add(candidate);
+			}
+		}
+		return candidates;
+	}
+
+	private Base64StringRow base64StringRow(StringRow row) {
+		String encoded = base64Payload(row.value());
+		if (encoded == null) {
+			return null;
+		}
+		byte[] decoded = decodeBase64(encoded);
+		if (decoded == null || decoded.length < 4) {
+			return null;
+		}
+		boolean text = mostlyText(decoded);
+		boolean padded = encoded.indexOf('=') >= 0;
+		if (!padded && encoded.length() < 16 && !text) {
+			return null;
+		}
+		String kind = text ? "text" : "binary";
+		String decodedPreview = text ? decodedTextPreview(decoded) : decodedHexPreview(decoded);
+		return new Base64StringRow(row.useAddress(), row.stringAddress(), encoded,
+			preview(encoded, 200), decodedPreview, kind);
+	}
+
+	private String base64Payload(String value) {
+		if (value == null) {
+			return null;
+		}
+		String text = value.trim();
+		int dataComma = text.indexOf(',');
+		if (dataComma > 0 && text.regionMatches(true, 0, "data:", 0, 5) &&
+			text.substring(0, dataComma).toLowerCase(Locale.ROOT).contains(";base64")) {
+			text = text.substring(dataComma + 1);
+		}
+		String compact = text.replaceAll("\\s+", "");
+		if (compact.length() < 8 || compact.length() % 4 == 1 ||
+			!compact.matches("[A-Za-z0-9+/=_-]+")) {
+			return null;
+		}
+		int firstPadding = compact.indexOf('=');
+		if (firstPadding >= 0 && !compact.substring(firstPadding).matches("=+")) {
+			return null;
+		}
+		return compact;
+	}
+
+	private byte[] decodeBase64(String encoded) {
+		String padded = encoded;
+		int remainder = padded.length() % 4;
+		if (remainder == 1) {
+			return null;
+		}
+		if (remainder > 0) {
+			padded += "=".repeat(4 - remainder);
+		}
+		try {
+			Base64.Decoder decoder =
+				encoded.indexOf('-') >= 0 || encoded.indexOf('_') >= 0 ? Base64.getUrlDecoder()
+						: Base64.getDecoder();
+			return decoder.decode(padded);
+		}
+		catch (IllegalArgumentException e) {
+			return null;
+		}
+	}
+
+	private boolean mostlyText(byte[] bytes) {
+		int text = 0;
+		for (byte b : bytes) {
+			int value = b & 0xff;
+			if (value == '\t' || value == '\n' || value == '\r' ||
+				(value >= 0x20 && value <= 0x7e)) {
+				text++;
+			}
+		}
+		return bytes.length > 0 && text >= Math.ceil(bytes.length * 0.75);
+	}
+
+	private String decodedTextPreview(byte[] bytes) {
+		StringBuilder builder = new StringBuilder();
+		for (byte b : bytes) {
+			int value = b & 0xff;
+			if (value == '\n' || value == '\r' || value == '\t') {
+				builder.append(' ');
+			}
+			else if (value >= 0x20 && value <= 0x7e) {
+				builder.append((char) value);
+			}
+			else {
+				builder.append('.');
+			}
+		}
+		return preview(builder.toString(), 200);
+	}
+
+	private String decodedHexPreview(byte[] bytes) {
+		StringBuilder builder = new StringBuilder();
+		int count = Math.min(bytes.length, 24);
+		for (int i = 0; i < count; i++) {
+			if (i > 0) {
+				builder.append(' ');
+			}
+			builder.append(String.format(Locale.ROOT, "%02x", bytes[i] & 0xff));
+		}
+		if (bytes.length > count) {
+			builder.append(" ...");
+		}
+		return builder.toString();
 	}
 
 	private boolean isQuotedStringLiteral(String text) {
@@ -3070,6 +3218,12 @@ final class ParadiseDecompilerProvider extends ComponentProvider {
 			int row = selectedModelRow(stringsTable);
 			if (row >= 0 && row < stringRows.size()) {
 				plugin.navigateTo(stringRows.get(row).stringAddress());
+			}
+		}));
+		base64StringsTable.addMouseListener(tableDoubleClick(() -> {
+			int row = selectedModelRow(base64StringsTable);
+			if (row >= 0 && row < base64StringRows.size()) {
+				plugin.navigateTo(base64StringRows.get(row).stringAddress());
 			}
 		}));
 		triageTable.addMouseListener(tableDoubleClick(() -> {
@@ -3679,7 +3833,11 @@ final class ParadiseDecompilerProvider extends ComponentProvider {
 		}
 	}
 
-	private record StringRow(Address useAddress, Address stringAddress, String preview) {
+	private record StringRow(Address useAddress, Address stringAddress, String value) {
+	}
+
+	private record Base64StringRow(Address useAddress, Address stringAddress, String encoded,
+			String encodedPreview, String decodedPreview, String kind) {
 	}
 
 	private record SuggestionRow(int priority, Address address, String finding, String evidence) {
