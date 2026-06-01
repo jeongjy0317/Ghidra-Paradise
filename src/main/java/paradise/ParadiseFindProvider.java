@@ -3,6 +3,8 @@ package paradise;
 import java.awt.BorderLayout;
 import java.awt.Color;
 import java.awt.Component;
+import java.awt.Dimension;
+import java.awt.FlowLayout;
 import java.awt.Graphics;
 import java.awt.Toolkit;
 import java.awt.datatransfer.StringSelection;
@@ -75,19 +77,18 @@ final class ParadiseFindProvider extends ComponentProvider {
 	private final JLabel titleLabel = new JLabel("Paradise Inspector");
 	private final JLabel statusLabel = new JLabel("No scan yet");
 	private final JTabbedPane tabs = new JTabbedPane();
+	private final JTextField filterField = new JTextField(18);
 	private final DefaultTableModel overviewModel = model();
 	private final DefaultTableModel urlModel = model();
 	private final DefaultTableModel pathModel = model();
 	private final DefaultTableModel shellModel = model();
 	private final Map<JTable, List<TableColumn>> tableColumns = new LinkedHashMap<>();
+	private final Map<JTable, TableRowSorter<DefaultTableModel>> tableSorters =
+		new LinkedHashMap<>();
 	private final JTable overviewTable = table(overviewModel);
 	private final JTable urlTable = table(urlModel);
 	private final JTable pathTable = table(pathModel);
 	private final JTable shellTable = table(shellModel);
-	private final JTextField overviewFilter = new JTextField(18);
-	private final JTextField urlFilter = new JTextField(18);
-	private final JTextField pathFilter = new JTextField(18);
-	private final JTextField shellFilter = new JTextField(18);
 	private List<ParadiseFindScanner.Row> overviewRows = List.of();
 	private List<ParadiseFindScanner.Row> urlRows = List.of();
 	private List<ParadiseFindScanner.Row> pathRows = List.of();
@@ -224,53 +225,66 @@ final class ParadiseFindProvider extends ComponentProvider {
 		header.setBorder(BorderFactory.createEmptyBorder(3, 8, 3, 8));
 		titleLabel.setFont(titleLabel.getFont().deriveFont(java.awt.Font.BOLD, 13f));
 		header.add(titleLabel, BorderLayout.WEST);
-		tabs.addTab("Overview", filteredTablePanel(overviewTable, overviewFilter));
-		tabs.addTab("URLs", filteredTablePanel(urlTable, urlFilter));
-		tabs.addTab("Paths", filteredTablePanel(pathTable, pathFilter));
-		tabs.addTab("Shell", filteredTablePanel(shellTable, shellFilter));
+		header.add(compactFilterPanel(), BorderLayout.EAST);
+		tabs.addTab("Overview", tablePanel(overviewTable));
+		tabs.addTab("URLs", tablePanel(urlTable));
+		tabs.addTab("Paths", tablePanel(pathTable));
+		tabs.addTab("Shell", tablePanel(shellTable));
 		panel.add(header, BorderLayout.NORTH);
 		panel.add(tabs, BorderLayout.CENTER);
 		panel.add(statusLabel, BorderLayout.SOUTH);
 	}
 
-	private JPanel filteredTablePanel(JTable table, JTextField filterField) {
-		installTextFilter(table, filterField);
-		JPanel wrapper = new JPanel(new BorderLayout(0, 4));
-		JPanel filterPanel = new JPanel(new BorderLayout(4, 0));
-		filterPanel.setBorder(BorderFactory.createEmptyBorder(4, 4, 0, 4));
-		filterPanel.add(new JLabel("Filter"), BorderLayout.WEST);
-		filterPanel.add(filterField, BorderLayout.CENTER);
-		wrapper.add(filterPanel, BorderLayout.NORTH);
+	private JPanel tablePanel(JTable table) {
+		installTableFilter(table);
+		JPanel wrapper = new JPanel(new BorderLayout());
 		wrapper.add(new JScrollPane(table), BorderLayout.CENTER);
 		return wrapper;
 	}
 
-	private void installTextFilter(JTable table, JTextField filterField) {
-		TableRowSorter<DefaultTableModel> sorter =
-			new TableRowSorter<>((DefaultTableModel) table.getModel());
-		table.setRowSorter(sorter);
+	private JPanel compactFilterPanel() {
+		filterField.putClientProperty("JTextField.placeholderText", "Filter");
+		filterField.setToolTipText("Filter Inspector rows");
+		Dimension fieldSize = new Dimension(160, 22);
+		filterField.setPreferredSize(fieldSize);
+		filterField.setMinimumSize(fieldSize);
+		filterField.addActionListener(e -> applyTableFilter());
 		filterField.getDocument().addDocumentListener(new javax.swing.event.DocumentListener() {
 			@Override
 			public void insertUpdate(javax.swing.event.DocumentEvent e) {
-				apply();
+				applyTableFilter();
 			}
 
 			@Override
 			public void removeUpdate(javax.swing.event.DocumentEvent e) {
-				apply();
+				applyTableFilter();
 			}
 
 			@Override
 			public void changedUpdate(javax.swing.event.DocumentEvent e) {
-				apply();
-			}
-
-			private void apply() {
-				String text = filterField.getText();
-				sorter.setRowFilter(text == null || text.isBlank() ? null
-						: RowFilter.regexFilter("(?i)" + Pattern.quote(text)));
+				applyTableFilter();
 			}
 		});
+		JPanel filterPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 4, 0));
+		filterPanel.setBorder(BorderFactory.createEmptyBorder());
+		filterPanel.add(filterField);
+		return filterPanel;
+	}
+
+	private void installTableFilter(JTable table) {
+		TableRowSorter<DefaultTableModel> sorter =
+			new TableRowSorter<>((DefaultTableModel) table.getModel());
+		table.setRowSorter(sorter);
+		tableSorters.put(table, sorter);
+	}
+
+	private void applyTableFilter() {
+		String text = filterField.getText();
+		RowFilter<DefaultTableModel, Object> filter = text == null || text.isBlank() ? null
+				: RowFilter.regexFilter("(?i)" + Pattern.quote(text));
+		for (TableRowSorter<DefaultTableModel> sorter : tableSorters.values()) {
+			sorter.setRowFilter(filter);
+		}
 	}
 
 	private void installLocalToolbarActions() {
