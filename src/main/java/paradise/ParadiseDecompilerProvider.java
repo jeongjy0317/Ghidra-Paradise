@@ -90,7 +90,7 @@ final class ParadiseDecompilerProvider extends ComponentProvider {
 		model("Direction", "Address", "Function", "Type", "Preview");
 	private final DefaultTableModel stringsModel = model("Use", "String", "Preview");
 	private final DefaultTableModel base64StringsModel =
-		model("Use", "String", "Decoded", "Kind");
+		model("Use", "String", "Decoded", "Double", "Kind");
 	private final DefaultTableModel cleanupsModel = model("Kind", "Cleanup", "Effect");
 	private final DefaultTableModel diffModel = model("Line", "Raw Ghidra", "Paradise Clean C");
 	private final DefaultTableModel draftsModel = model("Kind", "Target", "Suggestion");
@@ -1738,7 +1738,8 @@ final class ParadiseDecompilerProvider extends ComponentProvider {
 		styleTable(cleanupsTable, dark);
 		setColumnWidth(stringsTable, 0, 92);
 		setColumnWidth(base64StringsTable, 0, 92);
-		setColumnWidth(base64StringsTable, 3, 70);
+		setColumnWidth(base64StringsTable, 3, 58);
+		setColumnWidth(base64StringsTable, 4, 70);
 		setColumnWidth(diffTable, 0, 52);
 		setColumnWidth(draftsTable, 0, 78);
 		setColumnWidth(draftsTable, 1, 118);
@@ -2063,7 +2064,7 @@ final class ParadiseDecompilerProvider extends ComponentProvider {
 		base64StringRows = base64StringRows(stringRows);
 		for (Base64StringRow row : base64StringRows) {
 			base64StringsModel.addRow(new Object[] { row.useAddress(), row.encodedPreview(),
-				row.decodedPreview(), row.kind() });
+				row.decodedPreview(), row.doubleEncoded() ? "yes" : "no", row.kind() });
 		}
 	}
 
@@ -3031,10 +3032,9 @@ final class ParadiseDecompilerProvider extends ComponentProvider {
 		if (!padded && encoded.length() < 16 && !text) {
 			return null;
 		}
-		String kind = text ? "text" : "binary";
-		String decodedPreview = text ? decodedTextPreview(decoded) : decodedHexPreview(decoded);
+		DecodedBase64 display = decodedBase64Display(decoded);
 		return new Base64StringRow(row.useAddress(), row.stringAddress(), encoded,
-			preview(encoded, 200), decodedPreview, kind);
+			preview(encoded, 200), display.preview(), display.doubleEncoded(), display.kind());
 	}
 
 	private String base64Payload(String value) {
@@ -3119,6 +3119,39 @@ final class ParadiseDecompilerProvider extends ComponentProvider {
 		}
 		if (bytes.length > count) {
 			builder.append(" ...");
+		}
+		return builder.toString();
+	}
+
+	private DecodedBase64 decodedBase64Display(byte[] decoded) {
+		String decodedAscii = asciiText(decoded);
+		String nestedPayload = decodedAscii == null ? null : base64Payload(decodedAscii);
+		byte[] nestedDecoded = nestedPayload == null ? null : decodeBase64(nestedPayload);
+		if (nestedDecoded != null && nestedDecoded.length >= 4) {
+			boolean nestedText = mostlyText(nestedDecoded);
+			boolean nestedPadded = nestedPayload.indexOf('=') >= 0;
+			if (nestedPadded || nestedPayload.length() >= 16 || nestedText) {
+				return new DecodedBase64(
+					nestedText ? decodedTextPreview(nestedDecoded) : decodedHexPreview(nestedDecoded),
+					nestedText ? "text" : "binary", true);
+			}
+		}
+		boolean text = mostlyText(decoded);
+		return new DecodedBase64(text ? decodedTextPreview(decoded) : decodedHexPreview(decoded),
+			text ? "text" : "binary", false);
+	}
+
+	private String asciiText(byte[] bytes) {
+		StringBuilder builder = new StringBuilder();
+		for (byte b : bytes) {
+			int value = b & 0xff;
+			if (value == '\t' || value == '\n' || value == '\r' ||
+				(value >= 0x20 && value <= 0x7e)) {
+				builder.append((char) value);
+			}
+			else {
+				return null;
+			}
 		}
 		return builder.toString();
 	}
@@ -3837,7 +3870,10 @@ final class ParadiseDecompilerProvider extends ComponentProvider {
 	}
 
 	private record Base64StringRow(Address useAddress, Address stringAddress, String encoded,
-			String encodedPreview, String decodedPreview, String kind) {
+			String encodedPreview, String decodedPreview, boolean doubleEncoded, String kind) {
+	}
+
+	private record DecodedBase64(String preview, String kind, boolean doubleEncoded) {
 	}
 
 	private record SuggestionRow(int priority, Address address, String finding, String evidence) {
