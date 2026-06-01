@@ -293,6 +293,16 @@ final class ParadiseDecompilerProvider extends ComponentProvider {
 		return true;
 	}
 
+	boolean revealUsage(Address address, String rawValue, String value) {
+		if (address != null && revealAddress(address)) {
+			return true;
+		}
+		if (focusStringUsage(address, rawValue)) {
+			return true;
+		}
+		return !Objects.equals(rawValue, value) && focusStringUsage(address, value);
+	}
+
 	void refreshCurrent() {
 		ParadiseDecompileResult result = currentResult();
 		if (result != null) {

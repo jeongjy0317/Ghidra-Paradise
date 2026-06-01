@@ -391,7 +391,7 @@ final class ParadiseFindProvider extends ComponentProvider {
 		Address address = row.useAddress() != null ? row.useAddress() : row.textAddress();
 		if (address != null) {
 			plugin.navigateTo(address);
-			plugin.focusPseudocodeAt(address);
+			plugin.focusPseudocodeUsage(address, row.rawValue(), row.value());
 		}
 	}
 

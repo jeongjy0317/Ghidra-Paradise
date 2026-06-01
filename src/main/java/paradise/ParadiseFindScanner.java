@@ -295,7 +295,7 @@ final class ParadiseFindScanner {
 		Row existing = rows.get(key);
 		if (existing == null) {
 			rows.put(key, new Row(priority, 1, kind, source.textAddress(), source.useAddress(),
-				text.source(), text.chain(), value, evidence));
+				text.source(), text.chain(), value, source.value(), evidence));
 			return;
 		}
 		rows.put(key, mergeRepeated ? existing.withOccurrence(priority) : existing);
@@ -384,10 +384,10 @@ final class ParadiseFindScanner {
 	}
 
 	record Row(int priority, int count, String kind, Address textAddress, Address useAddress,
-			String source, String chain, String value, String evidence) {
+			String source, String chain, String value, String rawValue, String evidence) {
 		private Row withOccurrence(int priority) {
 			return new Row(Math.min(this.priority, priority), count + 1, kind, textAddress,
-				useAddress, source, chain, value, evidence);
+				useAddress, source, chain, value, rawValue, evidence);
 		}
 	}
 

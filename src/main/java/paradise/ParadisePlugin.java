@@ -350,6 +350,13 @@ public class ParadisePlugin extends ProgramPlugin {
 
 	private void decompileFunction(Function function, boolean force, boolean addHistory,
 			boolean reuseActiveTab, boolean focusProvider, Address revealAddress) {
+		decompileFunction(function, force, addHistory, reuseActiveTab, focusProvider,
+			revealAddress, null, null);
+	}
+
+	private void decompileFunction(Function function, boolean force, boolean addHistory,
+			boolean reuseActiveTab, boolean focusProvider, Address revealAddress, String rawValue,
+			String value) {
 		if (function == null) {
 			Msg.showInfo(this, provider.getComponent(), "Paradise", "No function selected.");
 			return;
@@ -382,7 +389,7 @@ public class ParadisePlugin extends ProgramPlugin {
 			Swing.runLater(() -> {
 				provider.showResult(displayResult, reuseRedirectTab, focusProvider);
 				if (revealAddress != null) {
-					provider.revealAddress(revealAddress);
+					revealPseudocodeUsage(revealAddress, rawValue, value);
 				}
 			});
 		});
@@ -448,6 +455,13 @@ public class ParadisePlugin extends ProgramPlugin {
 		if (address == null) {
 			return;
 		}
+		focusPseudocodeUsage(address, null, null);
+	}
+
+	void focusPseudocodeUsage(Address address, String rawValue, String value) {
+		if (address == null) {
+			return;
+		}
 		Program program = navigationProgram();
 		if (program == null) {
 			return;
@@ -459,11 +473,18 @@ public class ParadisePlugin extends ProgramPlugin {
 		Function displayed = provider.displayedFunction();
 		if (sameFunction(displayed, function) && provider.currentResult() != null) {
 			provider.setVisible(true);
-			provider.revealAddress(address);
+			revealPseudocodeUsage(address, rawValue, value);
 			provider.focusText();
 			return;
 		}
-		decompileFunction(function, false, false, true, true, address);
+		decompileFunction(function, false, false, true, true, address, rawValue, value);
+	}
+
+	private boolean revealPseudocodeUsage(Address address, String rawValue, String value) {
+		if (rawValue == null && value == null) {
+			return provider.revealAddress(address);
+		}
+		return provider.revealUsage(address, rawValue, value);
 	}
 
 	void jumpToDisassembly(ParadiseTokenSpan span) {
