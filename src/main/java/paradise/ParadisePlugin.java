@@ -91,6 +91,7 @@ public class ParadisePlugin extends ProgramPlugin {
 	private static final String OPTION_VIEW_CLEANUPS = "Show Cleanups panel";
 	private static final String OPTION_VIEW_FINDS_WINDOW = "Show URL/path finds window";
 	private static final String OPTION_FIND_COLUMN_PRIORITY = "Show Finds Priority column";
+	private static final String OPTION_FIND_COLUMN_COUNT = "Show Finds Count column";
 	private static final String OPTION_FIND_COLUMN_KIND = "Show Finds Kind column";
 	private static final String OPTION_FIND_COLUMN_ADDRESS = "Show Finds Address column";
 	private static final String OPTION_FIND_COLUMN_USE = "Show Finds Use column";
@@ -307,6 +308,7 @@ public class ParadisePlugin extends ProgramPlugin {
 	boolean showFindColumn(String title) {
 		String option = switch (title) {
 			case "Priority" -> OPTION_FIND_COLUMN_PRIORITY;
+			case "Count" -> OPTION_FIND_COLUMN_COUNT;
 			case "Kind" -> OPTION_FIND_COLUMN_KIND;
 			case "Address" -> OPTION_FIND_COLUMN_ADDRESS;
 			case "Use" -> OPTION_FIND_COLUMN_USE;
@@ -1404,6 +1406,8 @@ public class ParadisePlugin extends ProgramPlugin {
 			"Show the Paradise URL/path finds dockable window.");
 		toolOptions.registerOption(OPTION_FIND_COLUMN_PRIORITY, true, null,
 			"Show Priority in the Paradise Finds tables.");
+		toolOptions.registerOption(OPTION_FIND_COLUMN_COUNT, true, null,
+			"Show Count in the Paradise Finds tables.");
 		toolOptions.registerOption(OPTION_FIND_COLUMN_KIND, true, null,
 			"Show Kind in the Paradise Finds tables.");
 		toolOptions.registerOption(OPTION_FIND_COLUMN_ADDRESS, true, null,
@@ -1484,6 +1488,7 @@ public class ParadisePlugin extends ProgramPlugin {
 		JCheckBox viewCleanups = new JCheckBox("Cleanups", showAuxTab("Cleanups"));
 		JCheckBox viewFinds = new JCheckBox("URL/path finds window", showFindsWindow());
 		JCheckBox findColumnPriority = new JCheckBox("Priority", showFindColumn("Priority"));
+		JCheckBox findColumnCount = new JCheckBox("Count", showFindColumn("Count"));
 		JCheckBox findColumnKind = new JCheckBox("Kind", showFindColumn("Kind"));
 		JCheckBox findColumnAddress = new JCheckBox("Address", showFindColumn("Address"));
 		JCheckBox findColumnUse = new JCheckBox("Use", showFindColumn("Use"));
@@ -1536,6 +1541,7 @@ public class ParadisePlugin extends ProgramPlugin {
 			viewCleanups.setSelected(DEFAULT_SHOW_AUX_TAB);
 			viewFinds.setSelected(DEFAULT_SHOW_AUX_TAB);
 			findColumnPriority.setSelected(true);
+			findColumnCount.setSelected(true);
 			findColumnKind.setSelected(true);
 			findColumnAddress.setSelected(true);
 			findColumnUse.setSelected(true);
@@ -1604,8 +1610,8 @@ public class ParadisePlugin extends ProgramPlugin {
 			viewSuggestions, viewTriage, viewCleanups));
 		addOption(viewsPanel, viewsGc, optionSection("Dockable Windows", 1, viewFinds));
 		addOption(viewsPanel, viewsGc, optionSection("Finds Columns", 4, findColumnPriority,
-			findColumnKind, findColumnAddress, findColumnUse, findColumnSource, findColumnChain,
-			findColumnValue, findColumnEvidence));
+			findColumnCount, findColumnKind, findColumnAddress, findColumnUse, findColumnSource,
+			findColumnChain, findColumnValue, findColumnEvidence));
 		addSettingsFiller(viewsPanel, viewsGc);
 
 		JPanel exportPanel = settingsPanel();
@@ -1721,6 +1727,7 @@ public class ParadisePlugin extends ProgramPlugin {
 		toolOptions.setBoolean(OPTION_VIEW_CLEANUPS, viewCleanups.isSelected());
 		toolOptions.setBoolean(OPTION_VIEW_FINDS_WINDOW, viewFinds.isSelected());
 		toolOptions.setBoolean(OPTION_FIND_COLUMN_PRIORITY, findColumnPriority.isSelected());
+		toolOptions.setBoolean(OPTION_FIND_COLUMN_COUNT, findColumnCount.isSelected());
 		toolOptions.setBoolean(OPTION_FIND_COLUMN_KIND, findColumnKind.isSelected());
 		toolOptions.setBoolean(OPTION_FIND_COLUMN_ADDRESS, findColumnAddress.isSelected());
 		toolOptions.setBoolean(OPTION_FIND_COLUMN_USE, findColumnUse.isSelected());
@@ -1775,6 +1782,7 @@ public class ParadisePlugin extends ProgramPlugin {
 		toolOptions.setBoolean(OPTION_VIEW_CLEANUPS, DEFAULT_SHOW_AUX_TAB);
 		toolOptions.setBoolean(OPTION_VIEW_FINDS_WINDOW, DEFAULT_SHOW_AUX_TAB);
 		toolOptions.setBoolean(OPTION_FIND_COLUMN_PRIORITY, true);
+		toolOptions.setBoolean(OPTION_FIND_COLUMN_COUNT, true);
 		toolOptions.setBoolean(OPTION_FIND_COLUMN_KIND, true);
 		toolOptions.setBoolean(OPTION_FIND_COLUMN_ADDRESS, true);
 		toolOptions.setBoolean(OPTION_FIND_COLUMN_USE, true);

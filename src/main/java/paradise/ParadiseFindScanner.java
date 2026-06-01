@@ -207,6 +207,7 @@ final class ParadiseFindScanner {
 		}
 		List<Row> sorted = new ArrayList<>(rows.values());
 		sorted.sort(Comparator.comparingInt(Row::priority)
+				.thenComparing(Comparator.comparingInt(Row::count).reversed())
 				.thenComparing(Row::kind)
 				.thenComparing(Row::value)
 				.thenComparing(row -> Objects.toString(row.textAddress(), "")));
@@ -277,11 +278,15 @@ final class ParadiseFindScanner {
 		if (value == null || value.length() < 3) {
 			return;
 		}
-		String key = kind + "\u0000" + value + "\u0000" +
-			Objects.toString(source.textAddress(), "") + "\u0000" +
-			Objects.toString(source.useAddress(), "") + "\u0000" + text.chain();
-		rows.putIfAbsent(key, new Row(priority, kind, source.textAddress(), source.useAddress(),
-			text.source(), text.chain(), value, evidence));
+		String key = kind + "\u0000" + value + "\u0000" + text.source() + "\u0000" +
+			text.chain();
+		Row existing = rows.get(key);
+		if (existing == null) {
+			rows.put(key, new Row(priority, 1, kind, source.textAddress(), source.useAddress(),
+				text.source(), text.chain(), value, evidence));
+			return;
+		}
+		rows.put(key, existing.withOccurrence(priority));
 	}
 
 	private static String normalizeUrlText(String value) {
@@ -366,8 +371,12 @@ final class ParadiseFindScanner {
 			(value >= 0x20 && value <= 0x7e);
 	}
 
-	record Row(int priority, String kind, Address textAddress, Address useAddress, String source,
-			String chain, String value, String evidence) {
+	record Row(int priority, int count, String kind, Address textAddress, Address useAddress,
+			String source, String chain, String value, String evidence) {
+		private Row withOccurrence(int priority) {
+			return new Row(Math.min(this.priority, priority), count + 1, kind, textAddress,
+				useAddress, source, chain, value, evidence);
+		}
 	}
 
 	private record TextSource(Address useAddress, Address textAddress, String value) {

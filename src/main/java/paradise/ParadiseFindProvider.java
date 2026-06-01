@@ -60,6 +60,7 @@ import ghidra.util.task.TaskLauncher;
 final class ParadiseFindProvider extends ComponentProvider {
 	private static final ColumnSpec[] COLUMNS = {
 		new ColumnSpec("Priority", 52),
+		new ColumnSpec("Count", 52),
 		new ColumnSpec("Kind", 92),
 		new ColumnSpec("Address", 92),
 		new ColumnSpec("Use", 92),
@@ -410,10 +411,12 @@ final class ParadiseFindProvider extends ComponentProvider {
 		}
 		try (BufferedWriter writer =
 			Files.newBufferedWriter(chooser.getSelectedFile().toPath(), StandardCharsets.UTF_8)) {
-			writer.write("Priority,Kind,Address,Use,Source,Decode Chain,Value,Evidence");
+			writer.write("Priority,Count,Kind,Address,Use,Source,Decode Chain,Value,Evidence");
 			writer.newLine();
 			for (ParadiseFindScanner.Row row : overviewRows) {
 				writer.write(csv(row.priority()));
+				writer.write(',');
+				writer.write(csv(row.count()));
 				writer.write(',');
 				writer.write(csv(row.kind()));
 				writer.write(',');
@@ -536,7 +539,7 @@ final class ParadiseFindProvider extends ComponentProvider {
 			}
 		}
 		if (!added) {
-			table.getColumnModel().addColumn(columns.get(6));
+			table.getColumnModel().addColumn(columns.get(7));
 		}
 		table.repaint();
 	}
@@ -544,8 +547,9 @@ final class ParadiseFindProvider extends ComponentProvider {
 	private void fill(DefaultTableModel model, List<ParadiseFindScanner.Row> rows) {
 		model.setRowCount(0);
 		for (ParadiseFindScanner.Row row : rows) {
-			model.addRow(new Object[] { row.priority(), row.kind(), row.textAddress(),
-				row.useAddress(), row.source(), row.chain(), row.value(), row.evidence() });
+			model.addRow(new Object[] { row.priority(), row.count(), row.kind(),
+				row.textAddress(), row.useAddress(), row.source(), row.chain(), row.value(),
+				row.evidence() });
 		}
 	}
 
