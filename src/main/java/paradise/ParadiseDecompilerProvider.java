@@ -139,6 +139,9 @@ final class ParadiseDecompilerProvider extends ComponentProvider {
 	private JMenuItem stringPreviewItem;
 	private JMenuItem traceItem;
 	private JMenu convertLiteralMenu;
+	private JMenu decodeMenu;
+	private JMenuItem decodeBase64Item;
+	private JMenuItem decodeDoubleBase64Item;
 	private JMenuItem renameFromStringItem;
 	private JMenuItem wrapperRenameItem;
 	private JMenuItem highlightUsesItem;
@@ -817,6 +820,11 @@ final class ParadiseDecompilerProvider extends ComponentProvider {
 			e -> convertSelectedLiteral(LiteralFormat.CHARACTER)));
 		convertLiteralMenu.addSeparator();
 		convertLiteralMenu.add(item("Reset", e -> resetSelectedLiteral()));
+		decodeMenu = new JMenu("Decode from...");
+		decodeBase64Item = item("Base64", e -> decodeSelectedBase64(false));
+		decodeDoubleBase64Item = item("Base64 twice", e -> decodeSelectedBase64(true));
+		decodeMenu.add(decodeBase64Item);
+		decodeMenu.add(decodeDoubleBase64Item);
 		renameFromStringItem =
 			item("Rename Function From String", e -> plugin.renameFromSelectedString(selectedSpan()));
 		wrapperRenameItem =
@@ -840,6 +848,7 @@ final class ParadiseDecompilerProvider extends ComponentProvider {
 		popup.add(calleeItem);
 		popup.add(traceItem);
 		popup.add(convertLiteralMenu);
+		popup.add(decodeMenu);
 		popup.addSeparator();
 		popup.add(stringPreviewItem);
 		popup.add(renameFromStringItem);
@@ -1323,6 +1332,13 @@ final class ParadiseDecompilerProvider extends ComponentProvider {
 		stringPreviewItem.setEnabled(hasResult);
 		traceItem.setEnabled(hasResult && traceableSelectedVariable(currentTab()) != null);
 		convertLiteralMenu.setEnabled(hasResult && literalValue(span) != null);
+		String decodeSource = hasResult ? selectedDecodeSource() : null;
+		DecodedBase64 decodedBase64 = decodeSource == null ? null
+				: decodedBase64Display(decodeSource, true);
+		boolean canDecodeBase64 = decodedBase64 != null;
+		decodeMenu.setEnabled(canDecodeBase64);
+		decodeBase64Item.setEnabled(canDecodeBase64);
+		decodeDoubleBase64Item.setEnabled(canDecodeBase64 && decodedBase64.doubleEncoded());
 		renameFromStringItem.setEnabled(hasResult);
 		wrapperRenameItem.setEnabled(hasResult && currentFunction() != null);
 		highlightUsesItem.setEnabled(hasSpan);
@@ -1362,6 +1378,53 @@ final class ParadiseDecompilerProvider extends ComponentProvider {
 		tab.literalOverrides.remove(span.token());
 		render(tab, tab.result);
 		selectToken(tab, span.token());
+	}
+
+	private void decodeSelectedBase64(boolean decodeNested) {
+		String source = selectedDecodeSource();
+		DecodedBase64 decoded = decodedBase64Display(source, decodeNested);
+		if (source == null || decoded == null) {
+			Msg.showInfo(this, panel, "Decode from Base64",
+				"Select a Base64 string literal or Base64 text first.");
+			return;
+		}
+		if (decodeNested && !decoded.doubleEncoded()) {
+			Msg.showInfo(this, panel, "Decode from Base64",
+				"The selected value decodes once, but the decoded value is not another Base64 payload.");
+			return;
+		}
+
+		JTextArea output = new JTextArea(decoded.preview(), 8, 72);
+		output.setEditable(false);
+		output.setLineWrap(true);
+		output.setWrapStyleWord(true);
+		output.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 12));
+		JPanel content = new JPanel(new BorderLayout(0, 8));
+		String chain = decoded.doubleEncoded() ? "Base64 -> Base64 -> " : "Base64 -> ";
+		content.add(new JLabel(chain + decoded.kind()), BorderLayout.NORTH);
+		content.add(new JScrollPane(output), BorderLayout.CENTER);
+		JOptionPane.showMessageDialog(panel, content,
+			decodeNested ? "Decode from Base64 Twice" : "Decode from Base64",
+			JOptionPane.INFORMATION_MESSAGE);
+	}
+
+	private String selectedDecodeSource() {
+		PseudocodeTab tab = currentTab();
+		if (tab == null || tab.result == null) {
+			return null;
+		}
+		String text = selectedTextOrToken(tab);
+		if (text == null) {
+			return null;
+		}
+		text = text.trim();
+		if (text.isEmpty()) {
+			return null;
+		}
+		if (isQuotedStringLiteral(text)) {
+			return cStringLiteralValue(text);
+		}
+		return text;
 	}
 
 	private void selectToken(PseudocodeTab tab, ClangToken token) {
@@ -3024,17 +3087,31 @@ final class ParadiseDecompilerProvider extends ComponentProvider {
 			return null;
 		}
 		byte[] decoded = decodeBase64(encoded);
-		if (decoded == null || decoded.length < 4) {
+		if (!isUsefulBase64Decode(encoded, decoded)) {
 			return null;
+		}
+		DecodedBase64 display = decodedBase64Display(decoded, true);
+		return new Base64StringRow(row.useAddress(), row.stringAddress(), encoded,
+			preview(encoded, 200), display.preview(), display.doubleEncoded(), display.kind());
+	}
+
+	private DecodedBase64 decodedBase64Display(String value, boolean decodeNested) {
+		String encoded = base64Payload(value);
+		if (encoded == null) {
+			return null;
+		}
+		byte[] decoded = decodeBase64(encoded);
+		return isUsefulBase64Decode(encoded, decoded) ? decodedBase64Display(decoded, decodeNested)
+				: null;
+	}
+
+	private boolean isUsefulBase64Decode(String encoded, byte[] decoded) {
+		if (decoded == null || decoded.length < 4) {
+			return false;
 		}
 		boolean text = mostlyText(decoded);
 		boolean padded = encoded.indexOf('=') >= 0;
-		if (!padded && encoded.length() < 16 && !text) {
-			return null;
-		}
-		DecodedBase64 display = decodedBase64Display(decoded);
-		return new Base64StringRow(row.useAddress(), row.stringAddress(), encoded,
-			preview(encoded, 200), display.preview(), display.doubleEncoded(), display.kind());
+		return padded || encoded.length() >= 16 || text;
 	}
 
 	private String base64Payload(String value) {
@@ -3123,14 +3200,13 @@ final class ParadiseDecompilerProvider extends ComponentProvider {
 		return builder.toString();
 	}
 
-	private DecodedBase64 decodedBase64Display(byte[] decoded) {
+	private DecodedBase64 decodedBase64Display(byte[] decoded, boolean decodeNested) {
 		String decodedAscii = asciiText(decoded);
-		String nestedPayload = decodedAscii == null ? null : base64Payload(decodedAscii);
-		byte[] nestedDecoded = nestedPayload == null ? null : decodeBase64(nestedPayload);
-		if (nestedDecoded != null && nestedDecoded.length >= 4) {
-			boolean nestedText = mostlyText(nestedDecoded);
-			boolean nestedPadded = nestedPayload.indexOf('=') >= 0;
-			if (nestedPadded || nestedPayload.length() >= 16 || nestedText) {
+		if (decodeNested) {
+			String nestedPayload = decodedAscii == null ? null : base64Payload(decodedAscii);
+			byte[] nestedDecoded = nestedPayload == null ? null : decodeBase64(nestedPayload);
+			if (isUsefulBase64Decode(nestedPayload, nestedDecoded)) {
+				boolean nestedText = mostlyText(nestedDecoded);
 				return new DecodedBase64(
 					nestedText ? decodedTextPreview(nestedDecoded) : decodedHexPreview(nestedDecoded),
 					nestedText ? "text" : "binary", true);
