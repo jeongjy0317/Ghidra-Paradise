@@ -14,7 +14,10 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.function.BooleanSupplier;
 import java.util.regex.Pattern;
@@ -38,6 +41,7 @@ import javax.swing.SwingUtilities;
 import javax.swing.table.DefaultTableCellRenderer;
 import javax.swing.table.DefaultTableModel;
 import javax.swing.table.JTableHeader;
+import javax.swing.table.TableColumn;
 import javax.swing.table.TableRowSorter;
 
 import docking.ActionContext;
@@ -54,6 +58,17 @@ import ghidra.util.exception.CancelledException;
 import ghidra.util.task.TaskLauncher;
 
 final class ParadiseFindProvider extends ComponentProvider {
+	private static final ColumnSpec[] COLUMNS = {
+		new ColumnSpec("Priority", 52),
+		new ColumnSpec("Kind", 92),
+		new ColumnSpec("Address", 92),
+		new ColumnSpec("Use", 92),
+		new ColumnSpec("Source", 64),
+		new ColumnSpec("Decode Chain", 118),
+		new ColumnSpec("Value", 360),
+		new ColumnSpec("Evidence", 320)
+	};
+
 	private final ParadisePlugin plugin;
 	private final JPanel panel = new JPanel(new BorderLayout());
 	private final JLabel titleLabel = new JLabel("Paradise Finds");
@@ -62,6 +77,7 @@ final class ParadiseFindProvider extends ComponentProvider {
 	private final DefaultTableModel overviewModel = model();
 	private final DefaultTableModel urlModel = model();
 	private final DefaultTableModel pathModel = model();
+	private final Map<JTable, List<TableColumn>> tableColumns = new LinkedHashMap<>();
 	private final JTable overviewTable = table(overviewModel);
 	private final JTable urlTable = table(urlModel);
 	private final JTable pathTable = table(pathModel);
@@ -84,6 +100,7 @@ final class ParadiseFindProvider extends ComponentProvider {
 		buildUi();
 		installLocalToolbarActions();
 		installNavigation();
+		applyOptions();
 	}
 
 	@Override
@@ -98,6 +115,12 @@ final class ParadiseFindProvider extends ComponentProvider {
 			lastWholeProgram = false;
 			showRows(List.of(), "No scan yet");
 		}
+	}
+
+	void applyOptions() {
+		applyColumnOptions(overviewTable);
+		applyColumnOptions(urlTable);
+		applyColumnOptions(pathTable);
 	}
 
 	void scanActiveFunction() {
@@ -419,8 +442,11 @@ final class ParadiseFindProvider extends ComponentProvider {
 	}
 
 	private DefaultTableModel model() {
-		return new DefaultTableModel(new String[] { "Priority", "Kind", "Address", "Use",
-			"Source", "Decode Chain", "Value", "Evidence" }, 0) {
+		String[] headers = new String[COLUMNS.length];
+		for (int i = 0; i < COLUMNS.length; i++) {
+			headers[i] = COLUMNS[i].title();
+		}
+		return new DefaultTableModel(headers, 0) {
 			@Override
 			public boolean isCellEditable(int row, int column) {
 				return false;
@@ -431,6 +457,7 @@ final class ParadiseFindProvider extends ComponentProvider {
 	private JTable table(DefaultTableModel model) {
 		JTable table = new JTable(model);
 		table.setAutoCreateRowSorter(true);
+		table.setAutoResizeMode(JTable.AUTO_RESIZE_OFF);
 		table.setFillsViewportHeight(true);
 		table.setRowHeight(20);
 		JTableHeader header = table.getTableHeader();
@@ -482,14 +509,36 @@ final class ParadiseFindProvider extends ComponentProvider {
 				return label;
 			}
 		});
-		setColumnWidth(table, 0, 58);
-		setColumnWidth(table, 1, 100);
-		setColumnWidth(table, 2, 96);
-		setColumnWidth(table, 3, 96);
-		setColumnWidth(table, 4, 70);
-		setColumnWidth(table, 5, 120);
-		setColumnWidth(table, 6, 260);
+		for (int i = 0; i < COLUMNS.length; i++) {
+			setColumnWidth(table, i, COLUMNS[i].width());
+		}
+		List<TableColumn> columns = new ArrayList<>();
+		for (int i = 0; i < table.getColumnModel().getColumnCount(); i++) {
+			columns.add(table.getColumnModel().getColumn(i));
+		}
+		tableColumns.put(table, columns);
 		return table;
+	}
+
+	private void applyColumnOptions(JTable table) {
+		List<TableColumn> columns = tableColumns.get(table);
+		if (columns == null || columns.isEmpty()) {
+			return;
+		}
+		while (table.getColumnModel().getColumnCount() > 0) {
+			table.getColumnModel().removeColumn(table.getColumnModel().getColumn(0));
+		}
+		boolean added = false;
+		for (int i = 0; i < COLUMNS.length; i++) {
+			if (plugin.showFindColumn(COLUMNS[i].title())) {
+				table.getColumnModel().addColumn(columns.get(i));
+				added = true;
+			}
+		}
+		if (!added) {
+			table.getColumnModel().addColumn(columns.get(6));
+		}
+		table.repaint();
 	}
 
 	private void fill(DefaultTableModel model, List<ParadiseFindScanner.Row> rows) {
@@ -503,6 +552,9 @@ final class ParadiseFindProvider extends ComponentProvider {
 	private void setColumnWidth(JTable table, int column, int width) {
 		table.getColumnModel().getColumn(column).setPreferredWidth(width);
 		table.getColumnModel().getColumn(column).setMinWidth(Math.min(width, 40));
+	}
+
+	private record ColumnSpec(String title, int width) {
 	}
 
 	private enum FindGlyph {
