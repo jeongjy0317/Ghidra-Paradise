@@ -40,6 +40,8 @@ Paradise does not replace Ghidra's decompiler. It uses Ghidra as the source of t
   - detects executable launch strings such as `C:\ProgramData\run.exe --command2`, `./file`, and `./file --help`
   - groups repeated findings with a `Count` column when merge mode is enabled
   - supports Overview, URLs, Paths, Shell, and Execute tabs with filters, configurable columns, CSV export, and usage navigation
+  - shows per-finding detail tabs for Overview, decoded Value, Source/encoding metadata, and individual uses
+  - uses responsive detail tables with wrapped values, address `Goto` actions, and Value-tab copy actions
   - `Goto usage` focuses the pseudocode line by address, original encoded text, or decoded text
 - Variable trace view that follows the current pseudocode line and shows static/symbolic value estimates where possible.
 - Suggestions and triage views for review targets such as suspicious XOR operations, call-heavy functions, string-heavy functions, and likely entry logic.
@@ -97,6 +99,8 @@ In the Pseudocode viewer, right-click selected text or a string literal and use 
 
 Use `Paradise Inspector` when you want a focused review surface for network, filesystem, shell-operation, and executable-launch artifacts. The Inspector scans plain strings and decoded strings, then lists matching URLs, paths, command text, and launch strings. Right-click a row or press `Enter` to jump to the usage; decoded rows retain the original encoded source so navigation can still focus the line that contains the encoded literal.
 
+Selecting an Inspector row opens a detail area below the list. In `Screen` mode, detail tabs show a short Overview, decoded Value, Source/encoding metadata, and recorded Uses. Address rows include `Goto` buttons, while the Value tab includes `Copy` buttons for decoded and original values. Long values wrap inside responsive tables and expand row height instead of overflowing the panel. Source details separate encoding info, string/use locations, and raw data.
+
 ## Hotkeys
 
 | Action | macOS | Linux/Windows |
@@ -127,7 +131,7 @@ The settings window uses a left sidebar instead of top tabs, so selected section
 - `General`: hotkeys, Listing sync, external-location follow, matching-token highlighting, callee/xref navigation behavior, detected-main opening, and decompiler timeout.
 - `Pseudocode`: theme preset, font size, gutter, line numbers, token addresses, current-line highlight, and brace matching.
 - `Views`: choose which bottom analysis tabs are visible.
-- `Inspector`: show or hide the URL/path/shell Inspector window, merge repeated Inspector rows, and choose which Inspector table columns are visible.
+- `Inspector`: show or hide the URL/path/shell Inspector window, merge repeated Inspector rows, choose the Inspector detail renderer, and choose which Inspector table columns are visible.
 - `Cleanup`: enable or disable individual Clean C cleanup families, type aliases, and address comments.
 - `Export`: one combined C file or one file per function, plus optional metadata JSON.
 - `Layout`: reset Paradise pane, tab, theme, and cleanup defaults.
