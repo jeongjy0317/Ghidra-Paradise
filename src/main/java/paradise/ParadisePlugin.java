@@ -89,6 +89,7 @@ public class ParadisePlugin extends ProgramPlugin {
 	private static final String OPTION_VIEW_SUGGESTIONS = "Show Suggestions panel";
 	private static final String OPTION_VIEW_TRIAGE = "Show Triage panel";
 	private static final String OPTION_VIEW_CLEANUPS = "Show Cleanups panel";
+	private static final String OPTION_VIEW_FINDS_WINDOW = "Show URL/path finds window";
 	private static final String OPTION_CURRENT_LINE = "Highlight current line";
 	private static final String OPTION_BRACE_MATCHING = "Highlight matching braces";
 	private static final String OPTION_OPEN_CALLEE_NEW_TAB = "Open callees in new tabs";
@@ -141,6 +142,7 @@ public class ParadisePlugin extends ProgramPlugin {
 	private final ParadiseDecompilerEngine engine = new ParadiseDecompilerEngine();
 	private final ParadiseDecompilerProvider provider;
 	private final ParadiseGraphProvider graphProvider;
+	private final ParadiseFindProvider findProvider;
 	private boolean suppressLocationFollow;
 	private Address suppressedNavigationAddress;
 
@@ -148,8 +150,10 @@ public class ParadisePlugin extends ProgramPlugin {
 		super(tool);
 		provider = new ParadiseDecompilerProvider(this);
 		graphProvider = new ParadiseGraphProvider(this);
+		findProvider = new ParadiseFindProvider(this);
 		provider.addToTool();
 		graphProvider.addToTool();
+		findProvider.addToTool();
 		createActions();
 	}
 
@@ -157,6 +161,7 @@ public class ParadisePlugin extends ProgramPlugin {
 	public void init() {
 		super.init();
 		registerOptions();
+		findProvider.setVisible(showFindsWindow());
 	}
 
 	@Override
@@ -164,6 +169,7 @@ public class ParadisePlugin extends ProgramPlugin {
 		engine.close(program);
 		provider.programClosed(program);
 		graphProvider.programClosed(program);
+		findProvider.programClosed(program);
 	}
 
 	@Override
@@ -179,6 +185,7 @@ public class ParadisePlugin extends ProgramPlugin {
 	public void dispose() {
 		provider.removeFromTool();
 		graphProvider.removeFromTool();
+		findProvider.removeFromTool();
 		engine.close();
 		super.dispose();
 	}
@@ -283,6 +290,10 @@ public class ParadisePlugin extends ProgramPlugin {
 			default -> null;
 		};
 		return option == null || options().getBoolean(option, DEFAULT_SHOW_AUX_TAB);
+	}
+
+	boolean showFindsWindow() {
+		return options().getBoolean(OPTION_VIEW_FINDS_WINDOW, DEFAULT_SHOW_AUX_TAB);
 	}
 
 	boolean currentLineHighlight() {
@@ -477,6 +488,15 @@ public class ParadisePlugin extends ProgramPlugin {
 		}
 		Function function = provider.currentFunction();
 		return function == null ? null : function.getProgram();
+	}
+
+	Program activeProgramForFinds() {
+		return navigationProgram();
+	}
+
+	Function activeFunctionForFinds() {
+		Function function = functionAtCursor();
+		return function == null ? provider.currentFunction() : function;
 	}
 
 	private void followExternalLocation(ProgramLocation location) {
@@ -800,6 +820,14 @@ public class ParadisePlugin extends ProgramPlugin {
 		graphProvider.showGraph(program);
 	}
 
+	void openFunctionFinds() {
+		findProvider.scanActiveFunction();
+	}
+
+	void openProgramFinds() {
+		findProvider.scanWholeProgram();
+	}
+
 	void exportCurrentFunction() {
 		ParadiseDecompileResult result = provider.currentResult();
 		if (result == null) {
@@ -850,6 +878,12 @@ public class ParadisePlugin extends ProgramPlugin {
 			new String[] { "Paradise", "Diagram", "Open Binary Diagram" }, -1, 0,
 			() -> currentProgram != null || provider.currentResult() != null,
 			c -> openBinaryDiagram());
+		addAction("Paradise Scan Function Finds",
+			new String[] { "Paradise", "Inspect", "Scan Function URL/Path Finds" }, -1, 0,
+			() -> activeFunctionForFinds() != null, c -> openFunctionFinds());
+		addAction("Paradise Scan Binary Finds",
+			new String[] { "Paradise", "Inspect", "Scan Binary URL/Path Finds" }, -1, 0,
+			() -> activeProgramForFinds() != null, c -> openProgramFinds());
 		addAction("Paradise Pseudocode Back", new String[] { "Paradise", "Navigate", "Back" },
 			KeyEvent.VK_LEFT, historyKeyModifiers(), provider::isVisible, c -> provider.goBack());
 		addAction("Paradise Pseudocode Forward", new String[] { "Paradise", "Navigate", "Forward" },
@@ -1343,6 +1377,8 @@ public class ParadisePlugin extends ProgramPlugin {
 			"Show the Triage bottom panel tab.");
 		toolOptions.registerOption(OPTION_VIEW_CLEANUPS, DEFAULT_SHOW_AUX_TAB, null,
 			"Show the Cleanups bottom panel tab.");
+		toolOptions.registerOption(OPTION_VIEW_FINDS_WINDOW, DEFAULT_SHOW_AUX_TAB, null,
+			"Show the Paradise URL/path finds dockable window.");
 		toolOptions.registerOption(OPTION_CURRENT_LINE, DEFAULT_CURRENT_LINE, null,
 			"Highlight the current pseudocode line.");
 		toolOptions.registerOption(OPTION_BRACE_MATCHING, DEFAULT_BRACE_MATCHING, null,
@@ -1407,6 +1443,7 @@ public class ParadisePlugin extends ProgramPlugin {
 		JCheckBox viewSuggestions = new JCheckBox("Suggestions", showAuxTab("Suggestions"));
 		JCheckBox viewTriage = new JCheckBox("Triage", showAuxTab("Triage"));
 		JCheckBox viewCleanups = new JCheckBox("Cleanups", showAuxTab("Cleanups"));
+		JCheckBox viewFinds = new JCheckBox("URL/path finds window", showFindsWindow());
 		JCheckBox currentLine = new JCheckBox("Highlight current line", currentLineHighlight());
 		JCheckBox braceMatch = new JCheckBox("Highlight matching braces", braceMatching());
 		JCheckBox newTabs = new JCheckBox("Open callees in new tabs", openCalleesInNewTabs());
@@ -1450,6 +1487,7 @@ public class ParadisePlugin extends ProgramPlugin {
 			viewSuggestions.setSelected(DEFAULT_SHOW_AUX_TAB);
 			viewTriage.setSelected(DEFAULT_SHOW_AUX_TAB);
 			viewCleanups.setSelected(DEFAULT_SHOW_AUX_TAB);
+			viewFinds.setSelected(DEFAULT_SHOW_AUX_TAB);
 			currentLine.setSelected(DEFAULT_CURRENT_LINE);
 			braceMatch.setSelected(DEFAULT_BRACE_MATCHING);
 			highlightUses.setSelected(DEFAULT_HIGHLIGHT_USES);
@@ -1509,6 +1547,7 @@ public class ParadisePlugin extends ProgramPlugin {
 		addOption(viewsPanel, viewsGc, optionSection("Visible Tabs", 3, viewXrefs,
 			viewLocals, viewTrace, viewCalls, viewStrings, viewDiff, viewDrafts,
 			viewSuggestions, viewTriage, viewCleanups));
+		addOption(viewsPanel, viewsGc, optionSection("Dockable Windows", 1, viewFinds));
 		addSettingsFiller(viewsPanel, viewsGc);
 
 		JPanel exportPanel = settingsPanel();
@@ -1622,6 +1661,7 @@ public class ParadisePlugin extends ProgramPlugin {
 		toolOptions.setBoolean(OPTION_VIEW_SUGGESTIONS, viewSuggestions.isSelected());
 		toolOptions.setBoolean(OPTION_VIEW_TRIAGE, viewTriage.isSelected());
 		toolOptions.setBoolean(OPTION_VIEW_CLEANUPS, viewCleanups.isSelected());
+		toolOptions.setBoolean(OPTION_VIEW_FINDS_WINDOW, viewFinds.isSelected());
 		toolOptions.setBoolean(OPTION_CURRENT_LINE, currentLine.isSelected());
 		toolOptions.setBoolean(OPTION_BRACE_MATCHING, braceMatch.isSelected());
 		toolOptions.setBoolean(OPTION_OPEN_CALLEE_NEW_TAB, newTabs.isSelected());
@@ -1642,6 +1682,7 @@ public class ParadisePlugin extends ProgramPlugin {
 		toolOptions.setBoolean(OPTION_HIGHLIGHT_USES, highlightUses.isSelected());
 		toolOptions.setBoolean(OPTION_EXPORT_METADATA, metadata.isSelected());
 		provider.applyOptionsToOpenTabs();
+		findProvider.setVisible(viewFinds.isSelected());
 		if (formattingChanged && provider.currentResult() != null) {
 			engine.clearProgramCache(provider.currentResult().program());
 			provider.refreshCurrent();
@@ -1665,6 +1706,7 @@ public class ParadisePlugin extends ProgramPlugin {
 		toolOptions.setBoolean(OPTION_VIEW_SUGGESTIONS, DEFAULT_SHOW_AUX_TAB);
 		toolOptions.setBoolean(OPTION_VIEW_TRIAGE, DEFAULT_SHOW_AUX_TAB);
 		toolOptions.setBoolean(OPTION_VIEW_CLEANUPS, DEFAULT_SHOW_AUX_TAB);
+		toolOptions.setBoolean(OPTION_VIEW_FINDS_WINDOW, DEFAULT_SHOW_AUX_TAB);
 		toolOptions.setBoolean(OPTION_CURRENT_LINE, DEFAULT_CURRENT_LINE);
 		toolOptions.setBoolean(OPTION_BRACE_MATCHING, DEFAULT_BRACE_MATCHING);
 		toolOptions.setBoolean(OPTION_HIGHLIGHT_USES, DEFAULT_HIGHLIGHT_USES);
@@ -1685,6 +1727,7 @@ public class ParadisePlugin extends ProgramPlugin {
 		toolOptions.setBoolean(OPTION_OPEN_DETECTED_MAIN, DEFAULT_OPEN_DETECTED_MAIN);
 		provider.resetLayout();
 		provider.applyOptionsToOpenTabs();
+		findProvider.setVisible(DEFAULT_SHOW_AUX_TAB);
 	}
 
 	private void addOption(JPanel panel, GridBagConstraints gc, JComponent component) {
