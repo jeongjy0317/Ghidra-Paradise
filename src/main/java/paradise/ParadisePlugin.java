@@ -1,6 +1,8 @@
 package paradise;
 
 import java.awt.BorderLayout;
+import java.awt.CardLayout;
+import java.awt.Color;
 import java.awt.Dimension;
 import java.awt.Dialog;
 import java.awt.GridBagConstraints;
@@ -1469,8 +1471,6 @@ public class ParadisePlugin extends ProgramPlugin {
 			provider.resetLayout();
 		});
 
-		JTabbedPane tabs = new JTabbedPane();
-
 		JPanel generalPanel = settingsPanel();
 		GridBagConstraints generalGc = settingsConstraints();
 		addOption(generalPanel, generalGc, optionSection("Input and Sync", 2, hotkeys,
@@ -1522,16 +1522,65 @@ public class ParadisePlugin extends ProgramPlugin {
 			resetLayout));
 		addSettingsFiller(layoutPanel, layoutGc);
 
-		tabs.addTab("General", generalPanel);
-		tabs.addTab("Pseudocode", pseudocodePanel);
-		tabs.addTab("Views", viewsPanel);
-		tabs.addTab("Cleanup", cleanupPanel);
-		tabs.addTab("Export", exportPanel);
-		tabs.addTab("Layout", layoutPanel);
-		tabs.setPreferredSize(new Dimension(680, 430));
-		tabs.setMinimumSize(new Dimension(620, 380));
+		String[] pageNames = { "General", "Pseudocode", "Views", "Cleanup", "Export", "Layout" };
+		JList<String> pageList = new JList<>(pageNames);
+		pageList.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+		pageList.setSelectedIndex(0);
+		pageList.setFixedCellHeight(34);
+		pageList.setBorder(BorderFactory.createEmptyBorder(8, 6, 8, 6));
+		pageList.setBackground(new Color(244, 245, 247));
+		pageList.setSelectionBackground(new Color(218, 231, 252));
+		pageList.setSelectionForeground(new Color(18, 24, 32));
+		pageList.setCellRenderer(new DefaultListCellRenderer() {
+			@Override
+			public java.awt.Component getListCellRendererComponent(JList<?> list, Object value,
+					int index, boolean selected, boolean focus) {
+				JLabel label = (JLabel) super.getListCellRendererComponent(list, value, index,
+					selected, focus);
+				label.setBorder(BorderFactory.createEmptyBorder(6, 10, 6, 10));
+				label.setOpaque(true);
+				if (selected) {
+					label.setBackground(new Color(218, 231, 252));
+					label.setForeground(new Color(18, 24, 32));
+					label.setFont(label.getFont().deriveFont(java.awt.Font.BOLD));
+				}
+				else {
+					label.setBackground(new Color(244, 245, 247));
+					label.setForeground(new Color(42, 48, 56));
+				}
+				return label;
+			}
+		});
 
-		int response = JOptionPane.showConfirmDialog(provider.getComponent(), tabs,
+		CardLayout pageLayout = new CardLayout();
+		JPanel pageCards = new JPanel(pageLayout);
+		pageCards.add(settingsScroll(generalPanel), "General");
+		pageCards.add(settingsScroll(pseudocodePanel), "Pseudocode");
+		pageCards.add(settingsScroll(viewsPanel), "Views");
+		pageCards.add(settingsScroll(cleanupPanel), "Cleanup");
+		pageCards.add(settingsScroll(exportPanel), "Export");
+		pageCards.add(settingsScroll(layoutPanel), "Layout");
+		pageList.addListSelectionListener(e -> {
+			if (!e.getValueIsAdjusting()) {
+				pageLayout.show(pageCards, pageList.getSelectedValue());
+			}
+		});
+
+		JPanel settingsRoot = new JPanel(new BorderLayout());
+		settingsRoot.setPreferredSize(new Dimension(760, 470));
+		settingsRoot.setMinimumSize(new Dimension(700, 420));
+		JLabel title = new JLabel("Paradise Settings");
+		title.setFont(title.getFont().deriveFont(java.awt.Font.BOLD, 15f));
+		title.setBorder(BorderFactory.createEmptyBorder(0, 2, 10, 0));
+		settingsRoot.add(title, BorderLayout.NORTH);
+		JScrollPane navigation = new JScrollPane(pageList);
+		navigation.setBorder(BorderFactory.createMatteBorder(0, 0, 0, 1,
+			new Color(210, 214, 220)));
+		navigation.setPreferredSize(new Dimension(150, 1));
+		settingsRoot.add(navigation, BorderLayout.WEST);
+		settingsRoot.add(pageCards, BorderLayout.CENTER);
+
+		int response = JOptionPane.showConfirmDialog(provider.getComponent(), settingsRoot,
 			"Paradise Settings", JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE);
 		if (response != JOptionPane.OK_OPTION) {
 			return;
@@ -1680,6 +1729,13 @@ public class ParadisePlugin extends ProgramPlugin {
 		panel.add(labelComponent, BorderLayout.WEST);
 		panel.add(component, BorderLayout.CENTER);
 		return panel;
+	}
+
+	private JScrollPane settingsScroll(JPanel panel) {
+		JScrollPane scrollPane = new JScrollPane(panel);
+		scrollPane.setBorder(BorderFactory.createEmptyBorder());
+		scrollPane.getVerticalScrollBar().setUnitIncrement(16);
+		return scrollPane;
 	}
 
 	private GridBagConstraints settingsConstraints() {
