@@ -70,6 +70,15 @@ final class ParadiseFindScanner {
 	private static final Pattern RELATIVE_EXECUTE = Pattern.compile(
 		"(?<![A-Za-z0-9_./-])\\.\\.?/[A-Za-z0-9._+-][^\\s\"'<>|&;]*" +
 		"(?:\\s+[^\\r\\n\\x00]{1,180})?");
+	private static final Pattern REGISTRY_ROOT_PATH = Pattern.compile(
+		"(?i)\\b(?:HKEY_LOCAL_MACHINE|HKEY_CURRENT_USER|HKEY_CLASSES_ROOT|HKEY_USERS|" +
+		"HKEY_CURRENT_CONFIG|HKLM|HKCU|HKCR|HKU|HKCC)\\\\[A-Za-z0-9_ .{}()\\-\\\\]+");
+	private static final Pattern REGISTRY_COMMON_PATH = Pattern.compile(
+		"(?i)(?<![A-Za-z0-9_\\\\])(?:SOFTWARE|SYSTEM|SAM|SECURITY|DEFAULT|CurrentControlSet|" +
+		"ControlSet\\d{3})\\\\[A-Za-z0-9_ .{}()\\-\\\\]+");
+	private static final Pattern REGISTRY_WINDOWS_POLICY_PATH = Pattern.compile(
+		"(?i)(?<![A-Za-z0-9_\\\\])Microsoft\\\\Windows\\\\CurrentVersion\\\\(?:Run|RunOnce|Policies)" +
+		"(?:\\\\[A-Za-z0-9_ .{}()\\-]+)+");
 
 	private ParadiseFindScanner() {
 	}
@@ -224,6 +233,7 @@ final class ParadiseFindScanner {
 			monitor.incrementProgress(1);
 			for (ScanText text : scanTexts(source)) {
 				addUrlRows(rows, source, text, mergeRepeated);
+				addRegistryRows(rows, source, text, mergeRepeated);
 				addPathRows(rows, source, text, mergeRepeated);
 				addShellRows(rows, source, text, mergeRepeated);
 				addExecuteRows(rows, source, text, mergeRepeated);
@@ -296,6 +306,16 @@ final class ParadiseFindScanner {
 			mergeRepeated);
 	}
 
+	private static void addRegistryRows(Map<String, Row> rows, TextSource source, ScanText text,
+			boolean mergeRepeated) {
+		addRegistryMatches(rows, source, text, REGISTRY_ROOT_PATH, "registry root path",
+			mergeRepeated);
+		addRegistryMatches(rows, source, text, REGISTRY_COMMON_PATH, "registry hive path",
+			mergeRepeated);
+		addRegistryMatches(rows, source, text, REGISTRY_WINDOWS_POLICY_PATH,
+			"registry policy path", mergeRepeated);
+	}
+
 	private static void addMatches(Map<String, Row> rows, TextSource source, ScanText text,
 			String scanValue, Pattern pattern, String kind, String reason, boolean url,
 			boolean mergeRepeated) {
@@ -343,6 +363,19 @@ final class ParadiseFindScanner {
 			}
 			addRow(rows, source, text, "Execute", value, evidence(text, reason),
 				executePriority(text, value), mergeRepeated);
+		}
+	}
+
+	private static void addRegistryMatches(Map<String, Row> rows, TextSource source, ScanText text,
+			Pattern pattern, String reason, boolean mergeRepeated) {
+		Matcher matcher = pattern.matcher(text.value());
+		while (matcher.find()) {
+			String value = trimMatch(matcher.group());
+			if (!registryHasSignal(value)) {
+				continue;
+			}
+			addRow(rows, source, text, "Registry", value, evidence(text, reason),
+				registryPriority(text, value), mergeRepeated);
 		}
 	}
 
@@ -448,6 +481,20 @@ final class ParadiseFindScanner {
 		return Math.max(1, score);
 	}
 
+	private static int registryPriority(ScanText text, String value) {
+		int score = 2;
+		String lower = value.toLowerCase(Locale.ROOT);
+		if (!text.chain().isBlank()) {
+			score--;
+		}
+		if (lower.contains("currentversion") || lower.contains("\\policies\\") ||
+			lower.contains("\\run") || lower.contains("disabletaskmgr") ||
+			lower.contains("disableregistrytools") || lower.contains("winlogon")) {
+			score--;
+		}
+		return Math.max(1, score);
+	}
+
 	private static boolean shellHasSignal(String value) {
 		String lower = value.toLowerCase(Locale.ROOT);
 		return lower.contains(" -") || lower.contains(" /") || lower.contains(" /c") ||
@@ -462,8 +509,21 @@ final class ParadiseFindScanner {
 			lower.contains(".ps1") || lower.startsWith("./") || lower.startsWith("../");
 	}
 
+	private static boolean registryHasSignal(String value) {
+		String lower = value.toLowerCase(Locale.ROOT);
+		return lower.contains("\\") &&
+			(lower.startsWith("hkey_") || lower.startsWith("hklm\\") ||
+				lower.startsWith("hkcu\\") || lower.startsWith("hkcr\\") ||
+				lower.startsWith("hku\\") || lower.startsWith("hkcc\\") ||
+				lower.startsWith("software\\") || lower.startsWith("system\\") ||
+				lower.startsWith("sam\\") || lower.startsWith("security\\") ||
+				lower.startsWith("default\\") || lower.startsWith("currentcontrolset\\") ||
+				lower.matches("^controlset\\d{3}\\\\.*") ||
+				lower.startsWith("microsoft\\windows\\currentversion\\"));
+	}
+
 	private static String trimMatch(String value) {
-		String trimmed = value;
+		String trimmed = value.strip();
 		while (!trimmed.isEmpty() && ".,;:)]}'\"".indexOf(trimmed.charAt(trimmed.length() - 1)) >= 0) {
 			trimmed = trimmed.substring(0, trimmed.length() - 1);
 		}

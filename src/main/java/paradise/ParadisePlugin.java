@@ -89,7 +89,8 @@ public class ParadisePlugin extends ProgramPlugin {
 	private static final String OPTION_VIEW_SUGGESTIONS = "Show Suggestions panel";
 	private static final String OPTION_VIEW_TRIAGE = "Show Triage panel";
 	private static final String OPTION_VIEW_CLEANUPS = "Show Cleanups panel";
-	private static final String OPTION_VIEW_FINDS_WINDOW = "Show URL/path/shell inspector window";
+	private static final String OPTION_VIEW_FINDS_WINDOW =
+		"Show URL/path/shell/registry inspector window";
 	private static final String OPTION_FIND_MERGE_REPEATED = "Merge repeated Inspector rows";
 	private static final String OPTION_FIND_COLUMN_PRIORITY = "Show Inspector Priority column";
 	private static final String OPTION_FIND_COLUMN_COUNT = "Show Inspector Count column";
@@ -308,7 +309,8 @@ public class ParadisePlugin extends ProgramPlugin {
 
 	boolean showFindsWindow() {
 		return options().getBoolean(OPTION_VIEW_FINDS_WINDOW,
-			options().getBoolean("Show URL/path inspector window", DEFAULT_SHOW_AUX_TAB));
+			options().getBoolean("Show URL/path/shell inspector window",
+				options().getBoolean("Show URL/path inspector window", DEFAULT_SHOW_AUX_TAB)));
 	}
 
 	boolean mergeRepeatedFinds() {
@@ -1449,7 +1451,7 @@ public class ParadisePlugin extends ProgramPlugin {
 		toolOptions.registerOption(OPTION_VIEW_CLEANUPS, DEFAULT_SHOW_AUX_TAB, null,
 			"Show the Cleanups bottom panel tab.");
 		toolOptions.registerOption(OPTION_VIEW_FINDS_WINDOW, DEFAULT_SHOW_AUX_TAB, null,
-			"Show the Paradise URL/path/shell inspector dockable window.");
+			"Show the Paradise URL/path/shell/registry inspector dockable window.");
 		toolOptions.registerOption(OPTION_FIND_MERGE_REPEATED, DEFAULT_FIND_MERGE_REPEATED, null,
 			"Merge repeated Paradise Inspector rows and show the total in Count.");
 		toolOptions.registerOption(OPTION_FIND_COLUMN_PRIORITY, true, null,
@@ -1536,7 +1538,7 @@ public class ParadisePlugin extends ProgramPlugin {
 		JCheckBox viewSuggestions = new JCheckBox("Suggestions", showAuxTab("Suggestions"));
 		JCheckBox viewTriage = new JCheckBox("Triage", showAuxTab("Triage"));
 		JCheckBox viewCleanups = new JCheckBox("Cleanups", showAuxTab("Cleanups"));
-		JCheckBox viewFinds = new JCheckBox("URL/path/shell inspector window",
+		JCheckBox viewFinds = new JCheckBox("URL/path/shell/registry inspector window",
 			showFindsWindow());
 		JCheckBox mergeFindRows = new JCheckBox("Merge repeated inspector rows",
 			mergeRepeatedFinds());

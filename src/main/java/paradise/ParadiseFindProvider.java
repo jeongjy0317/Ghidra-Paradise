@@ -8,6 +8,7 @@ import java.awt.Dimension;
 import java.awt.FlowLayout;
 import java.awt.Font;
 import java.awt.Graphics;
+import java.awt.Graphics2D;
 import java.awt.Toolkit;
 import java.awt.datatransfer.StringSelection;
 import java.awt.event.ActionEvent;
@@ -55,6 +56,8 @@ import javax.swing.table.JTableHeader;
 import javax.swing.table.TableCellRenderer;
 import javax.swing.table.TableColumn;
 import javax.swing.table.TableRowSorter;
+import javax.swing.plaf.basic.BasicSplitPaneDivider;
+import javax.swing.plaf.basic.BasicSplitPaneUI;
 
 import docking.ActionContext;
 import docking.ComponentProvider;
@@ -87,6 +90,7 @@ final class ParadiseFindProvider extends ComponentProvider {
 	private final JLabel titleLabel = new JLabel("Paradise Inspector");
 	private final JLabel statusLabel = new JLabel("No scan yet");
 	private final JTabbedPane tabs = new JTabbedPane();
+	private final JSplitPane splitPane = new JSplitPane(JSplitPane.VERTICAL_SPLIT);
 	private final CardLayout detailLayout = new CardLayout();
 	private final JPanel detailCards = new JPanel(detailLayout);
 	private final JTabbedPane detailTabs = new JTabbedPane();
@@ -95,6 +99,7 @@ final class ParadiseFindProvider extends ComponentProvider {
 	private final DefaultTableModel overviewModel = model();
 	private final DefaultTableModel urlModel = model();
 	private final DefaultTableModel pathModel = model();
+	private final DefaultTableModel registryModel = model();
 	private final DefaultTableModel shellModel = model();
 	private final DefaultTableModel executeModel = model();
 	private final Map<JTable, List<TableColumn>> tableColumns = new LinkedHashMap<>();
@@ -103,11 +108,13 @@ final class ParadiseFindProvider extends ComponentProvider {
 	private final JTable overviewTable = table(overviewModel);
 	private final JTable urlTable = table(urlModel);
 	private final JTable pathTable = table(pathModel);
+	private final JTable registryTable = table(registryModel);
 	private final JTable shellTable = table(shellModel);
 	private final JTable executeTable = table(executeModel);
 	private List<ParadiseFindScanner.Row> overviewRows = List.of();
 	private List<ParadiseFindScanner.Row> urlRows = List.of();
 	private List<ParadiseFindScanner.Row> pathRows = List.of();
+	private List<ParadiseFindScanner.Row> registryRows = List.of();
 	private List<ParadiseFindScanner.Row> shellRows = List.of();
 	private List<ParadiseFindScanner.Row> executeRows = List.of();
 	private Program lastProgram;
@@ -144,6 +151,7 @@ final class ParadiseFindProvider extends ComponentProvider {
 		applyColumnOptions(overviewTable);
 		applyColumnOptions(urlTable);
 		applyColumnOptions(pathTable);
+		applyColumnOptions(registryTable);
 		applyColumnOptions(shellTable);
 		applyColumnOptions(executeTable);
 		detailLayout.show(detailCards, plugin.inspectorDetailsScreen() ? "screen" : "text");
@@ -229,13 +237,16 @@ final class ParadiseFindProvider extends ComponentProvider {
 	private void showRows(List<ParadiseFindScanner.Row> rows, String status) {
 		overviewRows = List.copyOf(rows);
 		urlRows = rows.stream().filter(row -> row.kind().equals("URL")).toList();
+		registryRows = rows.stream().filter(row -> row.kind().equals("Registry")).toList();
 		shellRows = rows.stream().filter(row -> row.kind().equals("Shell")).toList();
 		executeRows = rows.stream().filter(row -> row.kind().equals("Execute")).toList();
 		pathRows = rows.stream().filter(row -> !row.kind().equals("URL") &&
-			!row.kind().equals("Shell") && !row.kind().equals("Execute")).toList();
+			!row.kind().equals("Registry") && !row.kind().equals("Shell") &&
+			!row.kind().equals("Execute")).toList();
 		fill(overviewModel, overviewRows);
 		fill(urlModel, urlRows);
 		fill(pathModel, pathRows);
+		fill(registryModel, registryRows);
 		fill(shellModel, shellRows);
 		fill(executeModel, executeRows);
 		statusLabel.setText(status);
@@ -252,6 +263,7 @@ final class ParadiseFindProvider extends ComponentProvider {
 		tabs.addTab("Overview", tablePanel(overviewTable));
 		tabs.addTab("URLs", tablePanel(urlTable));
 		tabs.addTab("Paths", tablePanel(pathTable));
+		tabs.addTab("Registry", tablePanel(registryTable));
 		tabs.addTab("Shell", tablePanel(shellTable));
 		tabs.addTab("Execute", tablePanel(executeTable));
 		tabs.addChangeListener(e -> updateDetail());
@@ -260,9 +272,12 @@ final class ParadiseFindProvider extends ComponentProvider {
 		detailArea.setLineWrap(true);
 		detailArea.setWrapStyleWord(false);
 		detailArea.setFont(new Font(Font.MONOSPACED, Font.PLAIN, detailArea.getFont().getSize()));
-		JSplitPane splitPane = new JSplitPane(JSplitPane.VERTICAL_SPLIT, tabs, detailPanel());
+		splitPane.setUI(new DottedSplitPaneUi());
+		splitPane.setBorder(BorderFactory.createEmptyBorder());
+		splitPane.setTopComponent(tabs);
+		splitPane.setBottomComponent(detailPanel());
 		splitPane.setResizeWeight(0.78);
-		splitPane.setDividerSize(8);
+		splitPane.setDividerSize(11);
 		panel.add(header, BorderLayout.NORTH);
 		panel.add(splitPane, BorderLayout.CENTER);
 		panel.add(statusLabel, BorderLayout.SOUTH);
@@ -372,6 +387,7 @@ final class ParadiseFindProvider extends ComponentProvider {
 		installTableNavigation(overviewTable);
 		installTableNavigation(urlTable);
 		installTableNavigation(pathTable);
+		installTableNavigation(registryTable);
 		installTableNavigation(shellTable);
 		installTableNavigation(executeTable);
 	}
@@ -446,8 +462,9 @@ final class ParadiseFindProvider extends ComponentProvider {
 		return switch (tabs.getSelectedIndex()) {
 			case 1 -> urlTable;
 			case 2 -> pathTable;
-			case 3 -> shellTable;
-			case 4 -> executeTable;
+			case 3 -> registryTable;
+			case 4 -> shellTable;
+			case 5 -> executeTable;
 			default -> overviewTable;
 		};
 	}
@@ -456,8 +473,9 @@ final class ParadiseFindProvider extends ComponentProvider {
 		return switch (tabs.getSelectedIndex()) {
 			case 1 -> urlRows;
 			case 2 -> pathRows;
-			case 3 -> shellRows;
-			case 4 -> executeRows;
+			case 3 -> registryRows;
+			case 4 -> shellRows;
+			case 5 -> executeRows;
 			default -> overviewRows;
 		};
 	}
@@ -530,7 +548,8 @@ final class ParadiseFindProvider extends ComponentProvider {
 			new Object[] { "Priority", row.priority() },
 			new Object[] { "Count", row.count() },
 			new Object[] { "Address", row.textAddress() },
-			new Object[] { "Use", row.useAddress() }));
+			new Object[] { "Use", row.useAddress() },
+			new Object[] { "Value", row.value() }));
 		addDetailHeader(sourcePage, "Source");
 		addDetailSection(sourcePage, "Encoding Info", List.of(
 			new Object[] { "Source", row.source() },
@@ -1031,6 +1050,48 @@ final class ParadiseFindProvider extends ComponentProvider {
 	}
 
 	private record ColumnSpec(String title, int width) {
+	}
+
+	private final class DottedSplitPaneUi extends BasicSplitPaneUI {
+		@Override
+		public BasicSplitPaneDivider createDefaultDivider() {
+			return new BasicSplitPaneDivider(this) {
+				@Override
+				public void paint(Graphics g) {
+					Graphics2D g2 = (Graphics2D) g.create();
+					try {
+						boolean dark = plugin.darkTheme();
+						Color background = dark ? new Color(50, 53, 57) : new Color(225, 225, 218);
+						Color border = dark ? new Color(76, 81, 88) : new Color(185, 185, 178);
+						Color dot = dark ? new Color(142, 149, 160) : new Color(110, 110, 104);
+						int width = getWidth();
+						int height = getHeight();
+						g2.setColor(background);
+						g2.fillRect(0, 0, width, height);
+						g2.setColor(border);
+						g2.drawLine(0, 0, width, 0);
+						g2.drawLine(0, height - 1, width, height - 1);
+						g2.setColor(dot);
+						int cx = width / 2;
+						int cy = height / 2;
+						if (ParadiseFindProvider.this.splitPane.getOrientation() ==
+							JSplitPane.VERTICAL_SPLIT) {
+							for (int dx = -7; dx <= 7; dx += 7) {
+								g2.fillOval(cx + dx - 2, cy - 2, 4, 4);
+							}
+						}
+						else {
+							for (int dy = -7; dy <= 7; dy += 7) {
+								g2.fillOval(cx - 2, cy + dy - 2, 4, 4);
+							}
+						}
+					}
+					finally {
+						g2.dispose();
+					}
+				}
+			};
+		}
 	}
 
 	private enum FindGlyph {
