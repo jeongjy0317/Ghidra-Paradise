@@ -6,6 +6,7 @@ import java.awt.event.*;
 import java.util.*;
 import java.util.List;
 import java.util.function.BooleanSupplier;
+import java.util.function.IntFunction;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -16,6 +17,7 @@ import javax.swing.event.DocumentListener;
 import javax.swing.table.DefaultTableCellRenderer;
 import javax.swing.table.DefaultTableModel;
 import javax.swing.table.JTableHeader;
+import javax.swing.table.TableRowSorter;
 import javax.swing.text.*;
 import javax.swing.plaf.basic.BasicSplitPaneDivider;
 import javax.swing.plaf.basic.BasicSplitPaneUI;
@@ -89,8 +91,6 @@ final class ParadiseDecompilerProvider extends ComponentProvider {
 	private final DefaultTableModel callsModel =
 		model("Direction", "Address", "Function", "Type", "Preview");
 	private final DefaultTableModel stringsModel = model("Use", "String", "Preview");
-	private final DefaultTableModel encodedStringsModel =
-		model("Use", "String", "Encoding", "Chain", "Decoded", "Kind", "Confidence");
 	private final DefaultTableModel cleanupsModel = model("Kind", "Cleanup", "Effect");
 	private final DefaultTableModel diffModel = model("Line", "Raw Ghidra", "Paradise Clean C");
 	private final DefaultTableModel draftsModel = model("Kind", "Target", "Suggestion");
@@ -104,7 +104,6 @@ final class ParadiseDecompilerProvider extends ComponentProvider {
 	private final JTable localsTable = table(localsModel);
 	private final JTable callsTable = table(callsModel);
 	private final JTable stringsTable = table(stringsModel);
-	private final JTable encodedStringsTable = table(encodedStringsModel);
 	private final JTable cleanupsTable = table(cleanupsModel);
 	private final JTable diffTable = table(diffModel);
 	private final JTable draftsTable = table(draftsModel);
@@ -115,8 +114,13 @@ final class ParadiseDecompilerProvider extends ComponentProvider {
 	private final JScrollPane localsPanel = new JScrollPane(localsTable);
 	private final JScrollPane tracePanel = new JScrollPane(traceTable);
 	private final JScrollPane callsPanel = new JScrollPane(callsTable);
-	private final JScrollPane stringsOverviewPanel = new JScrollPane(stringsTable);
-	private final JScrollPane encodedStringsPanel = new JScrollPane(encodedStringsTable);
+	private final JTextField stringsFilterField = new JTextField(18);
+	private final JPanel stringsOverviewPanel = filteredTablePanel(stringsTable, stringsFilterField);
+	private final Map<DecodeCodec, DefaultTableModel> encodedStringModels =
+		new EnumMap<>(DecodeCodec.class);
+	private final Map<DecodeCodec, JTable> encodedStringTables = new EnumMap<>(DecodeCodec.class);
+	private final Map<DecodeCodec, JTextField> encodedStringFilters = new EnumMap<>(DecodeCodec.class);
+	private final Map<DecodeCodec, JPanel> encodedStringPanels = new EnumMap<>(DecodeCodec.class);
 	private final JTabbedPane stringsPanel = createStringsPanel();
 	private final JScrollPane diffPanel = new JScrollPane(diffTable);
 	private final JScrollPane draftsPanel = new JScrollPane(draftsTable);
@@ -127,7 +131,8 @@ final class ParadiseDecompilerProvider extends ComponentProvider {
 	private List<ParadiseXrefRow> xrefRows = List.of();
 	private List<CallRow> callRows = List.of();
 	private List<StringRow> stringRows = List.of();
-	private List<EncodedStringRow> encodedStringRows = List.of();
+	private Map<DecodeCodec, List<EncodedStringRow>> encodedStringRowsByCodec =
+		new EnumMap<>(DecodeCodec.class);
 	private List<SuggestionRow> suggestionRows = List.of();
 	private List<TriageRow> triageRows = List.of();
 	private List<TraceRow> traceRows = List.of();
@@ -146,7 +151,6 @@ final class ParadiseDecompilerProvider extends ComponentProvider {
 	private JMenuItem decodeHexItem;
 	private JMenuItem decodeUrlItem;
 	private JMenuItem decodeBase32Item;
-	private JMenuItem decodeCEscapesItem;
 	private JMenuItem decodeUtf16LeItem;
 	private JMenuItem decodeUtf16BeItem;
 	private JMenuItem renameFromStringItem;
@@ -166,6 +170,7 @@ final class ParadiseDecompilerProvider extends ComponentProvider {
 		setTitle("Paradise Pseudocode");
 		setWindowMenuGroup("Paradise");
 		setDefaultWindowPosition(WindowPosition.RIGHT);
+		initEncodedStringViews();
 		buildUi();
 		createPopup();
 		installLocalToolbarActions();
@@ -686,11 +691,89 @@ final class ParadiseDecompilerProvider extends ComponentProvider {
 		return cleanupsPanel;
 	}
 
+	private void initEncodedStringViews() {
+		for (DecodeCodec codec : DecodeCodec.stringTabs()) {
+			DefaultTableModel model =
+				model("Use", "String", "Chain", "Decoded", "Kind", "Confidence");
+			JTable table = table(model);
+			JTextField filter = new JTextField(18);
+			encodedStringModels.put(codec, model);
+			encodedStringTables.put(codec, table);
+			encodedStringFilters.put(codec, filter);
+			encodedStringPanels.put(codec, filteredTablePanel(table, filter));
+		}
+	}
+
 	private JTabbedPane createStringsPanel() {
 		JTabbedPane pane = new JTabbedPane();
 		pane.addTab("Overview", stringsOverviewPanel);
-		pane.addTab("Encoded", encodedStringsPanel);
 		return pane;
+	}
+
+	private void rebuildStringsPanelTabs() {
+		String selected = stringsPanel.getSelectedIndex() >= 0
+				? stringsPanel.getTitleAt(stringsPanel.getSelectedIndex())
+				: null;
+		stringsPanel.removeAll();
+		stringsPanel.addTab("Overview", stringsOverviewPanel);
+		for (DecodeCodec codec : DecodeCodec.stringTabs()) {
+			List<EncodedStringRow> rows =
+				encodedStringRowsByCodec.getOrDefault(codec, List.of());
+			if (!rows.isEmpty()) {
+				stringsPanel.addTab(codec.tabTitle(), encodedStringPanels.get(codec));
+			}
+		}
+		if (selected != null) {
+			for (int i = 0; i < stringsPanel.getTabCount(); i++) {
+				if (selected.equals(stringsPanel.getTitleAt(i))) {
+					stringsPanel.setSelectedIndex(i);
+					break;
+				}
+			}
+		}
+		boolean dark = plugin.darkTheme();
+		styleTabbedPane(stringsPanel, dark, dark ? DARK_PANEL_BG : LIGHT_PANEL_BG,
+			dark ? DARK_HEADER_FG : LIGHT_HEADER_FG);
+	}
+
+	private JPanel filteredTablePanel(JTable table, JTextField filterField) {
+		installTextFilter(table, filterField);
+		JPanel wrapper = new JPanel(new BorderLayout(0, 4));
+		JPanel filterPanel = new JPanel(new BorderLayout(4, 0));
+		filterPanel.setBorder(BorderFactory.createEmptyBorder(4, 4, 0, 4));
+		filterPanel.add(new JLabel("Filter"), BorderLayout.WEST);
+		filterPanel.add(filterField, BorderLayout.CENTER);
+		wrapper.add(filterPanel, BorderLayout.NORTH);
+		wrapper.add(new JScrollPane(table), BorderLayout.CENTER);
+		return wrapper;
+	}
+
+	private void installTextFilter(JTable table, JTextField filterField) {
+		TableRowSorter<DefaultTableModel> sorter =
+			new TableRowSorter<>((DefaultTableModel) table.getModel());
+		table.setRowSorter(sorter);
+		filterField.getDocument().addDocumentListener(new DocumentListener() {
+			@Override
+			public void insertUpdate(DocumentEvent e) {
+				apply();
+			}
+
+			@Override
+			public void removeUpdate(DocumentEvent e) {
+				apply();
+			}
+
+			@Override
+			public void changedUpdate(DocumentEvent e) {
+				apply();
+			}
+
+			private void apply() {
+				String text = filterField.getText();
+				sorter.setRowFilter(text == null || text.isBlank() ? null
+						: RowFilter.regexFilter("(?i)" + Pattern.quote(text)));
+			}
+		});
 	}
 
 	private void rebuildAuxTabs() {
@@ -834,7 +917,6 @@ final class ParadiseDecompilerProvider extends ComponentProvider {
 		decodeHexItem = item("Hex", e -> decodeSelected(DecodeCodec.HEX));
 		decodeUrlItem = item("URL percent", e -> decodeSelected(DecodeCodec.URL));
 		decodeBase32Item = item("Base32", e -> decodeSelected(DecodeCodec.BASE32));
-		decodeCEscapesItem = item("C escapes", e -> decodeSelected(DecodeCodec.C_ESCAPES));
 		decodeUtf16LeItem = item("UTF-16LE", e -> decodeSelected(DecodeCodec.UTF16_LE));
 		decodeUtf16BeItem = item("UTF-16BE", e -> decodeSelected(DecodeCodec.UTF16_BE));
 		decodeMenu.add(decodeAutoItem);
@@ -844,7 +926,6 @@ final class ParadiseDecompilerProvider extends ComponentProvider {
 		decodeMenu.add(decodeHexItem);
 		decodeMenu.add(decodeUrlItem);
 		decodeMenu.add(decodeBase32Item);
-		decodeMenu.add(decodeCEscapesItem);
 		decodeMenu.add(decodeUtf16LeItem);
 		decodeMenu.add(decodeUtf16BeItem);
 		renameFromStringItem =
@@ -1363,7 +1444,6 @@ final class ParadiseDecompilerProvider extends ComponentProvider {
 		decodeHexItem.setEnabled(codecs.contains(DecodeCodec.HEX));
 		decodeUrlItem.setEnabled(codecs.contains(DecodeCodec.URL));
 		decodeBase32Item.setEnabled(codecs.contains(DecodeCodec.BASE32));
-		decodeCEscapesItem.setEnabled(codecs.contains(DecodeCodec.C_ESCAPES));
 		decodeUtf16LeItem.setEnabled(codecs.contains(DecodeCodec.UTF16_LE));
 		decodeUtf16BeItem.setEnabled(codecs.contains(DecodeCodec.UTF16_BE));
 		renameFromStringItem.setEnabled(hasResult);
@@ -1450,11 +1530,29 @@ final class ParadiseDecompilerProvider extends ComponentProvider {
 	private void selectToken(PseudocodeTab tab, ClangToken token) {
 		for (ParadiseTokenSpan span : tab.displaySpans) {
 			if (span.token() == token) {
-				tab.textPane.setCaretPosition(span.start());
-				tab.textPane.moveCaretPosition(span.end());
+				selectRange(tab, span.start(), span.end());
 				return;
 			}
 		}
+	}
+
+	private void selectRange(PseudocodeTab tab, int start, int end) {
+		if (tab == null || tab.textPane.getDocument().getLength() == 0) {
+			return;
+		}
+		int length = tab.textPane.getDocument().getLength();
+		int safeStart = Math.max(0, Math.min(start, length - 1));
+		int safeEnd = Math.max(safeStart, Math.min(end, length));
+		tab.textPane.setCaretPosition(safeStart);
+		tab.textPane.moveCaretPosition(safeEnd);
+		try {
+			Rectangle rect = tab.textPane.modelToView2D(safeStart).getBounds();
+			tab.textPane.scrollRectToVisible(rect);
+		}
+		catch (BadLocationException e) {
+			// Ignore stale offsets after refresh.
+		}
+		updateEditorHighlights(tab);
 	}
 
 	private LiteralValue literalValue(ParadiseTokenSpan span) {
@@ -1786,6 +1884,12 @@ final class ParadiseDecompilerProvider extends ComponentProvider {
 		searchField.setForeground(text);
 		searchField.setCaretColor(text);
 		searchStatusLabel.setForeground(dark ? new Color(190, 198, 208) : new Color(75, 75, 75));
+		styleFilterPanel(stringsOverviewPanel, dark, panelBg, text);
+		styleFilterField(stringsFilterField, dark, text);
+		for (DecodeCodec codec : DecodeCodec.stringTabs()) {
+			styleFilterPanel(encodedStringPanels.get(codec), dark, panelBg, text);
+			styleFilterField(encodedStringFilters.get(codec), dark, text);
+		}
 		cleanupsSummaryLabel.setBackground(panelBg);
 		cleanupsSummaryLabel.setForeground(text);
 		cleanupsSummaryLabel.setOpaque(true);
@@ -1812,7 +1916,9 @@ final class ParadiseDecompilerProvider extends ComponentProvider {
 		styleTable(localsTable, dark);
 		styleTable(callsTable, dark);
 		styleTable(stringsTable, dark);
-		styleTable(encodedStringsTable, dark);
+		for (JTable table : encodedStringTables.values()) {
+			styleTable(table, dark);
+		}
 		styleTable(diffTable, dark);
 		styleTable(draftsTable, dark);
 		styleTable(suggestionsTable, dark);
@@ -1820,11 +1926,12 @@ final class ParadiseDecompilerProvider extends ComponentProvider {
 		styleTable(traceTable, dark);
 		styleTable(cleanupsTable, dark);
 		setColumnWidth(stringsTable, 0, 92);
-		setColumnWidth(encodedStringsTable, 0, 92);
-		setColumnWidth(encodedStringsTable, 2, 82);
-		setColumnWidth(encodedStringsTable, 3, 150);
-		setColumnWidth(encodedStringsTable, 5, 64);
-		setColumnWidth(encodedStringsTable, 6, 78);
+		for (JTable table : encodedStringTables.values()) {
+			setColumnWidth(table, 0, 92);
+			setColumnWidth(table, 2, 150);
+			setColumnWidth(table, 4, 64);
+			setColumnWidth(table, 5, 78);
+		}
 		setColumnWidth(diffTable, 0, 52);
 		setColumnWidth(draftsTable, 0, 78);
 		setColumnWidth(draftsTable, 1, 118);
@@ -1849,6 +1956,35 @@ final class ParadiseDecompilerProvider extends ComponentProvider {
 		table.getColumnModel().getColumn(column).setMinWidth(width);
 		table.getColumnModel().getColumn(column).setPreferredWidth(width);
 		table.getColumnModel().getColumn(column).setMaxWidth(width);
+	}
+
+	private void styleFilterField(JTextField field, boolean dark, Color text) {
+		if (field == null) {
+			return;
+		}
+		field.setBackground(dark ? new Color(45, 48, 52) : Color.WHITE);
+		field.setForeground(text);
+		field.setCaretColor(text);
+	}
+
+	private void styleFilterPanel(JPanel panel, boolean dark, Color panelBg, Color text) {
+		if (panel == null) {
+			return;
+		}
+		panel.setBackground(panelBg);
+		for (java.awt.Component component : panel.getComponents()) {
+			if (component instanceof JPanel childPanel) {
+				childPanel.setBackground(panelBg);
+				for (java.awt.Component child : childPanel.getComponents()) {
+					if (child instanceof JLabel label) {
+						label.setForeground(text);
+					}
+				}
+			}
+			else if (component instanceof JScrollPane scrollPane) {
+				scrollPane.getViewport().setBackground(dark ? DARK_PANEL_BG : LIGHT_PANEL_BG);
+			}
+		}
 	}
 
 	private void styleTabbedPane(JTabbedPane tabbedPane, boolean dark, Color background,
@@ -2029,7 +2165,9 @@ final class ParadiseDecompilerProvider extends ComponentProvider {
 		fill(localsModel);
 		fill(callsModel);
 		fill(stringsModel);
-		fill(encodedStringsModel);
+		for (DefaultTableModel model : encodedStringModels.values()) {
+			fill(model);
+		}
 		fill(cleanupsModel);
 		fill(diffModel);
 		fill(draftsModel);
@@ -2040,11 +2178,12 @@ final class ParadiseDecompilerProvider extends ComponentProvider {
 		xrefRows = List.of();
 		callRows = List.of();
 		stringRows = List.of();
-		encodedStringRows = List.of();
+		encodedStringRowsByCodec = new EnumMap<>(DecodeCodec.class);
 		suggestionRows = List.of();
 		triageRows = List.of();
 		traceRows = List.of();
 		if (result == null) {
+			rebuildStringsPanelTabs();
 			return;
 		}
 		updateXrefsPanel(result);
@@ -2146,11 +2285,19 @@ final class ParadiseDecompilerProvider extends ComponentProvider {
 			stringsModel.addRow(new Object[] { row.useAddress(), row.stringAddress(),
 				preview(row.value(), 200) });
 		}
-		encodedStringRows = encodedStringRows(stringRows);
-		for (EncodedStringRow row : encodedStringRows) {
-			encodedStringsModel.addRow(new Object[] { row.useAddress(), row.encodedPreview(),
-				row.encoding(), row.chain(), row.decodedPreview(), row.kind(), row.confidence() });
+		encodedStringRowsByCodec = encodedStringRows(stringRows);
+		for (Map.Entry<DecodeCodec, List<EncodedStringRow>> entry :
+				encodedStringRowsByCodec.entrySet()) {
+			DefaultTableModel model = encodedStringModels.get(entry.getKey());
+			if (model == null) {
+				continue;
+			}
+			for (EncodedStringRow row : entry.getValue()) {
+				model.addRow(new Object[] { row.useAddress(), row.encodedPreview(), row.chain(),
+					row.decodedPreview(), row.kind(), row.confidence() });
+			}
 		}
+		rebuildStringsPanelTabs();
 	}
 
 	private void updateDiffPanel(ParadiseDecompileResult result) {
@@ -3086,17 +3233,20 @@ final class ParadiseDecompilerProvider extends ComponentProvider {
 		rows.putIfAbsent(key, row);
 	}
 
-	private List<EncodedStringRow> encodedStringRows(List<StringRow> rows) {
-		List<EncodedStringRow> matches = new ArrayList<>();
+	private Map<DecodeCodec, List<EncodedStringRow>> encodedStringRows(List<StringRow> rows) {
+		Map<DecodeCodec, List<EncodedStringRow>> matches = new EnumMap<>(DecodeCodec.class);
 		Set<String> seen = new HashSet<>();
 		for (StringRow row : rows) {
 			for (DecodeResult result : decodeResults(row.value(), true)) {
 				String key = Objects.toString(row.stringAddress(), "") + "\u0000" + row.value() +
 					"\u0000" + result.chain();
 				if (seen.add(key)) {
-					matches.add(new EncodedStringRow(row.useAddress(), row.stringAddress(),
-						preview(row.value(), 200), result.encoding(), result.chain(),
-						result.decodedPreview(), result.kind(), result.confidence()));
+					EncodedStringRow encodedRow =
+						new EncodedStringRow(row.useAddress(), row.stringAddress(), row.value(),
+							preview(row.value(), 200), result.chain(),
+							result.decodedPreview(), result.kind(), result.confidence());
+					matches.computeIfAbsent(result.codec(), ignored -> new ArrayList<>())
+							.add(encodedRow);
 				}
 			}
 		}
@@ -3185,7 +3335,6 @@ final class ParadiseDecompilerProvider extends ComponentProvider {
 			case HEX -> decodeHexStep(source);
 			case URL -> decodeUrlStep(source);
 			case BASE32 -> decodeBase32Step(source);
-			case C_ESCAPES -> decodeCEscapesStep(source);
 			case UTF16_LE -> decodeUtf16Step(source, true);
 			case UTF16_BE -> decodeUtf16Step(source, false);
 			case AUTO, BASE64_TWICE -> null;
@@ -3236,15 +3385,6 @@ final class ParadiseDecompilerProvider extends ComponentProvider {
 			mostlyText(decoded) ? 82 : 58);
 	}
 
-	private DecodeStep decodeCEscapesStep(String source) {
-		byte[] decoded = cEscapeBytes(source);
-		if (!isUsefulByteDecode(decoded)) {
-			return null;
-		}
-		return new DecodeStep(DecodeCodec.C_ESCAPES, decoded, asciiText(decoded),
-			mostlyText(decoded) ? 80 : 55);
-	}
-
 	private DecodeStep decodeUtf16Step(String source, boolean littleEndian) {
 		byte[] bytes = byteLikeBytes(source);
 		if (bytes == null || bytes.length < 4 || (bytes.length & 1) != 0) {
@@ -3267,7 +3407,7 @@ final class ParadiseDecompilerProvider extends ComponentProvider {
 		String kind = step.text() != null || mostlyText(step.bytes()) ? textKind(display) : "binary";
 		int chainPenalty = Math.max(0, chain.size() - 1) * 3;
 		int confidence = Math.max(1, step.confidence() - chainPenalty);
-		return new DecodeResult(chain.get(0).displayName(), chainDisplay(chain), display,
+		return new DecodeResult(chain.get(0), chainDisplay(chain), display,
 			preview(display, 200), kind, chain.size(), confidence);
 	}
 
@@ -3457,86 +3597,6 @@ final class ParadiseDecompilerProvider extends ComponentProvider {
 			}
 		}
 		return out.toByteArray();
-	}
-
-	private byte[] cEscapeBytes(String source) {
-		if (source == null || source.indexOf('\\') < 0) {
-			return null;
-		}
-		java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
-		boolean changed = false;
-		for (int i = 0; i < source.length(); i++) {
-			char c = source.charAt(i);
-			if (c != '\\' || i + 1 >= source.length()) {
-				out.write((byte) c);
-				continue;
-			}
-			char escaped = source.charAt(++i);
-			changed = true;
-			switch (escaped) {
-				case 'n' -> out.write('\n');
-				case 'r' -> out.write('\r');
-				case 't' -> out.write('\t');
-				case '\\' -> out.write('\\');
-				case '"' -> out.write('"');
-				case '\'' -> out.write('\'');
-				case 'x' -> {
-					int value = 0;
-					int digits = 0;
-					while (i + 1 < source.length() && digits < 2) {
-						int nibble = hexNibble(source.charAt(i + 1));
-						if (nibble < 0) {
-							break;
-						}
-						value = (value << 4) | nibble;
-						i++;
-						digits++;
-					}
-					if (digits == 0) {
-						out.write('x');
-					}
-					else {
-						out.write(value);
-					}
-				}
-				case 'u' -> {
-					if (i + 4 < source.length()) {
-						String hex = source.substring(i + 1, i + 5);
-						if (hex.matches("[0-9A-Fa-f]{4}")) {
-							String text = String.valueOf((char) Integer.parseInt(hex, 16));
-							out.writeBytes(text.getBytes(java.nio.charset.StandardCharsets.UTF_8));
-							i += 4;
-						}
-						else {
-							out.write('u');
-						}
-					}
-					else {
-						out.write('u');
-					}
-				}
-				default -> {
-					if (escaped >= '0' && escaped <= '7') {
-						int value = escaped - '0';
-						int digits = 1;
-						while (i + 1 < source.length() && digits < 3) {
-							char next = source.charAt(i + 1);
-							if (next < '0' || next > '7') {
-								break;
-							}
-							value = (value << 3) | (next - '0');
-							i++;
-							digits++;
-						}
-						out.write(value & 0xff);
-					}
-					else {
-						out.write((byte) escaped);
-					}
-				}
-			}
-		}
-		return changed ? out.toByteArray() : null;
 	}
 
 	private byte[] byteLikeBytes(String source) {
@@ -3808,12 +3868,31 @@ final class ParadiseDecompilerProvider extends ComponentProvider {
 				plugin.navigateTo(stringRows.get(row).stringAddress());
 			}
 		}));
-		encodedStringsTable.addMouseListener(tableDoubleClick(() -> {
-			int row = selectedModelRow(encodedStringsTable);
-			if (row >= 0 && row < encodedStringRows.size()) {
-				plugin.navigateTo(encodedStringRows.get(row).stringAddress());
+		installStringTablePopup(stringsTable,
+			row -> row >= 0 && row < stringRows.size() ? stringRows.get(row) : null);
+		for (DecodeCodec codec : DecodeCodec.stringTabs()) {
+			JTable table = encodedStringTables.get(codec);
+			if (table == null) {
+				continue;
 			}
-		}));
+			table.addMouseListener(tableDoubleClick(() -> {
+				int row = selectedModelRow(table);
+				List<EncodedStringRow> rows =
+					encodedStringRowsByCodec.getOrDefault(codec, List.of());
+				if (row >= 0 && row < rows.size()) {
+					plugin.navigateTo(rows.get(row).stringAddress());
+				}
+			}));
+			installStringTablePopup(table, row -> {
+				List<EncodedStringRow> rows =
+					encodedStringRowsByCodec.getOrDefault(codec, List.of());
+				if (row < 0 || row >= rows.size()) {
+					return null;
+				}
+				EncodedStringRow encoded = rows.get(row);
+				return new StringRow(encoded.useAddress(), encoded.stringAddress(), encoded.value());
+			});
+		}
 		triageTable.addMouseListener(tableDoubleClick(() -> {
 			int row = selectedModelRow(triageTable);
 			if (row >= 0 && row < triageRows.size()) {
@@ -3848,6 +3927,87 @@ final class ParadiseDecompilerProvider extends ComponentProvider {
 				revealTraceRow(traceRows.get(row));
 			}
 		}));
+	}
+
+	private void installStringTablePopup(JTable table, IntFunction<StringRow> rowGetter) {
+		JPopupMenu tablePopup = new JPopupMenu();
+		tablePopup.add(item("Goto usage", e -> {
+			StringRow row = rowGetter.apply(selectedModelRow(table));
+			if (row != null) {
+				gotoStringUsage(row);
+			}
+		}));
+		tablePopup.add(item("Goto string", e -> {
+			StringRow row = rowGetter.apply(selectedModelRow(table));
+			if (row != null) {
+				plugin.navigateTo(row.stringAddress());
+			}
+		}));
+		table.addMouseListener(new MouseAdapter() {
+			@Override
+			public void mousePressed(MouseEvent e) {
+				handleTablePopup(e);
+			}
+
+			@Override
+			public void mouseReleased(MouseEvent e) {
+				handleTablePopup(e);
+			}
+
+			private void handleTablePopup(MouseEvent e) {
+				if (!e.isPopupTrigger()) {
+					return;
+				}
+				int row = table.rowAtPoint(e.getPoint());
+				if (row >= 0) {
+					table.setRowSelectionInterval(row, row);
+				}
+				tablePopup.show(e.getComponent(), e.getX(), e.getY());
+			}
+		});
+	}
+
+	private void gotoStringUsage(StringRow row) {
+		if (row.useAddress() != null) {
+			plugin.navigateTo(row.useAddress());
+		}
+		if (!focusStringUsage(row.useAddress(), row.value())) {
+			Msg.showInfo(this, panel, "Goto usage",
+				"No pseudocode usage is visible for the selected string.");
+		}
+	}
+
+	private boolean focusStringUsage(Address useAddress, String value) {
+		PseudocodeTab tab = currentTab();
+		if (tab == null || tab.result == null) {
+			return false;
+		}
+		if (useAddress != null) {
+			for (ParadiseTokenSpan span : tab.displaySpans) {
+				if (useAddress.equals(span.address())) {
+					selectRange(tab, span.start(), span.end());
+					focusText();
+					return true;
+				}
+			}
+		}
+		if (value == null || value.isBlank()) {
+			return false;
+		}
+		String text = tab.textPane.getText();
+		int index = text.indexOf(value);
+		int matchLength = value.length();
+		if (index < 0) {
+			String preview = previewString(value, Math.min(value.length(), 80));
+			index = preview.isBlank() ? -1 : text.indexOf(preview);
+			matchLength = preview.length();
+		}
+		if (index < 0) {
+			return false;
+		}
+		selectRange(tab, index, index + Math.min(matchLength, text.length() - index));
+		focusText();
+		return true;
 	}
 
 	private MouseAdapter tableDoubleClick(Runnable runnable) {
@@ -4398,12 +4558,13 @@ final class ParadiseDecompilerProvider extends ComponentProvider {
 		HEX("Hex"),
 		URL("URL percent"),
 		BASE32("Base32"),
-		C_ESCAPES("C escapes"),
 		UTF16_LE("UTF-16LE"),
 		UTF16_BE("UTF-16BE");
 
 		private static final List<DecodeCodec> DIRECT_CODECS =
-			List.of(BASE64, HEX, URL, BASE32, C_ESCAPES, UTF16_LE, UTF16_BE);
+			List.of(BASE64, HEX, URL, BASE32, UTF16_LE, UTF16_BE);
+		private static final List<DecodeCodec> STRING_TABS =
+			List.of(BASE64, HEX, URL, BASE32, UTF16_LE, UTF16_BE);
 
 		private final String displayName;
 
@@ -4415,8 +4576,16 @@ final class ParadiseDecompilerProvider extends ComponentProvider {
 			return displayName;
 		}
 
+		private String tabTitle() {
+			return this == URL ? "URL" : displayName;
+		}
+
 		private static List<DecodeCodec> directCodecs() {
 			return DIRECT_CODECS;
+		}
+
+		private static List<DecodeCodec> stringTabs() {
+			return STRING_TABS;
 		}
 	}
 
@@ -4453,14 +4622,14 @@ final class ParadiseDecompilerProvider extends ComponentProvider {
 	private record StringRow(Address useAddress, Address stringAddress, String value) {
 	}
 
-	private record EncodedStringRow(Address useAddress, Address stringAddress, String encodedPreview,
-			String encoding, String chain, String decodedPreview, String kind, int confidence) {
+	private record EncodedStringRow(Address useAddress, Address stringAddress, String value,
+			String encodedPreview, String chain, String decodedPreview, String kind, int confidence) {
 	}
 
 	private record DecodeStep(DecodeCodec codec, byte[] bytes, String text, int confidence) {
 	}
 
-	private record DecodeResult(String encoding, String chain, String decodedDisplay,
+	private record DecodeResult(DecodeCodec codec, String chain, String decodedDisplay,
 			String decodedPreview, String kind, int depth, int confidence) {
 	}
 
