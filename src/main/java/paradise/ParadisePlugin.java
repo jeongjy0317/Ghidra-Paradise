@@ -89,17 +89,17 @@ public class ParadisePlugin extends ProgramPlugin {
 	private static final String OPTION_VIEW_SUGGESTIONS = "Show Suggestions panel";
 	private static final String OPTION_VIEW_TRIAGE = "Show Triage panel";
 	private static final String OPTION_VIEW_CLEANUPS = "Show Cleanups panel";
-	private static final String OPTION_VIEW_FINDS_WINDOW = "Show URL/path finds window";
-	private static final String OPTION_FIND_MERGE_REPEATED = "Merge repeated Finds rows";
-	private static final String OPTION_FIND_COLUMN_PRIORITY = "Show Finds Priority column";
-	private static final String OPTION_FIND_COLUMN_COUNT = "Show Finds Count column";
-	private static final String OPTION_FIND_COLUMN_KIND = "Show Finds Kind column";
-	private static final String OPTION_FIND_COLUMN_ADDRESS = "Show Finds Address column";
-	private static final String OPTION_FIND_COLUMN_USE = "Show Finds Use column";
-	private static final String OPTION_FIND_COLUMN_SOURCE = "Show Finds Source column";
-	private static final String OPTION_FIND_COLUMN_CHAIN = "Show Finds Decode Chain column";
-	private static final String OPTION_FIND_COLUMN_VALUE = "Show Finds Value column";
-	private static final String OPTION_FIND_COLUMN_EVIDENCE = "Show Finds Evidence column";
+	private static final String OPTION_VIEW_FINDS_WINDOW = "Show URL/path inspector window";
+	private static final String OPTION_FIND_MERGE_REPEATED = "Merge repeated Inspector rows";
+	private static final String OPTION_FIND_COLUMN_PRIORITY = "Show Inspector Priority column";
+	private static final String OPTION_FIND_COLUMN_COUNT = "Show Inspector Count column";
+	private static final String OPTION_FIND_COLUMN_KIND = "Show Inspector Kind column";
+	private static final String OPTION_FIND_COLUMN_ADDRESS = "Show Inspector Address column";
+	private static final String OPTION_FIND_COLUMN_USE = "Show Inspector Use column";
+	private static final String OPTION_FIND_COLUMN_SOURCE = "Show Inspector Source column";
+	private static final String OPTION_FIND_COLUMN_CHAIN = "Show Inspector Decode Chain column";
+	private static final String OPTION_FIND_COLUMN_VALUE = "Show Inspector Value column";
+	private static final String OPTION_FIND_COLUMN_EVIDENCE = "Show Inspector Evidence column";
 	private static final String OPTION_CURRENT_LINE = "Highlight current line";
 	private static final String OPTION_BRACE_MATCHING = "Highlight matching braces";
 	private static final String OPTION_OPEN_CALLEE_NEW_TAB = "Open callees in new tabs";
@@ -909,11 +909,11 @@ public class ParadisePlugin extends ProgramPlugin {
 			new String[] { "Paradise", "Diagram", "Open Binary Diagram" }, -1, 0,
 			() -> currentProgram != null || provider.currentResult() != null,
 			c -> openBinaryDiagram());
-		addAction("Paradise Scan Function Finds",
-			new String[] { "Paradise", "Inspect", "Scan Function URL/Path Finds" }, -1, 0,
+		addAction("Paradise Scan Function Inspector",
+			new String[] { "Paradise", "Inspect", "Scan Function URL/Path Inspector" }, -1, 0,
 			() -> activeFunctionForFinds() != null, c -> openFunctionFinds());
-		addAction("Paradise Scan Binary Finds",
-			new String[] { "Paradise", "Inspect", "Scan Binary URL/Path Finds" }, -1, 0,
+		addAction("Paradise Scan Binary Inspector",
+			new String[] { "Paradise", "Inspect", "Scan Binary URL/Path Inspector" }, -1, 0,
 			() -> activeProgramForFinds() != null, c -> openProgramFinds());
 		addAction("Paradise Pseudocode Back", new String[] { "Paradise", "Navigate", "Back" },
 			KeyEvent.VK_LEFT, historyKeyModifiers(), provider::isVisible, c -> provider.goBack());
@@ -1409,27 +1409,27 @@ public class ParadisePlugin extends ProgramPlugin {
 		toolOptions.registerOption(OPTION_VIEW_CLEANUPS, DEFAULT_SHOW_AUX_TAB, null,
 			"Show the Cleanups bottom panel tab.");
 		toolOptions.registerOption(OPTION_VIEW_FINDS_WINDOW, DEFAULT_SHOW_AUX_TAB, null,
-			"Show the Paradise URL/path finds dockable window.");
+			"Show the Paradise URL/path inspector dockable window.");
 		toolOptions.registerOption(OPTION_FIND_MERGE_REPEATED, DEFAULT_FIND_MERGE_REPEATED, null,
-			"Merge repeated Paradise Finds rows and show the total in Count.");
+			"Merge repeated Paradise Inspector rows and show the total in Count.");
 		toolOptions.registerOption(OPTION_FIND_COLUMN_PRIORITY, true, null,
-			"Show Priority in the Paradise Finds tables.");
+			"Show Priority in the Paradise Inspector tables.");
 		toolOptions.registerOption(OPTION_FIND_COLUMN_COUNT, true, null,
-			"Show Count in the Paradise Finds tables.");
+			"Show Count in the Paradise Inspector tables.");
 		toolOptions.registerOption(OPTION_FIND_COLUMN_KIND, true, null,
-			"Show Kind in the Paradise Finds tables.");
+			"Show Kind in the Paradise Inspector tables.");
 		toolOptions.registerOption(OPTION_FIND_COLUMN_ADDRESS, true, null,
-			"Show Address in the Paradise Finds tables.");
+			"Show Address in the Paradise Inspector tables.");
 		toolOptions.registerOption(OPTION_FIND_COLUMN_USE, true, null,
-			"Show Use in the Paradise Finds tables.");
+			"Show Use in the Paradise Inspector tables.");
 		toolOptions.registerOption(OPTION_FIND_COLUMN_SOURCE, true, null,
-			"Show Source in the Paradise Finds tables.");
+			"Show Source in the Paradise Inspector tables.");
 		toolOptions.registerOption(OPTION_FIND_COLUMN_CHAIN, true, null,
-			"Show Decode Chain in the Paradise Finds tables.");
+			"Show Decode Chain in the Paradise Inspector tables.");
 		toolOptions.registerOption(OPTION_FIND_COLUMN_VALUE, true, null,
-			"Show Value in the Paradise Finds tables.");
+			"Show Value in the Paradise Inspector tables.");
 		toolOptions.registerOption(OPTION_FIND_COLUMN_EVIDENCE, true, null,
-			"Show Evidence in the Paradise Finds tables.");
+			"Show Evidence in the Paradise Inspector tables.");
 		toolOptions.registerOption(OPTION_CURRENT_LINE, DEFAULT_CURRENT_LINE, null,
 			"Highlight the current pseudocode line.");
 		toolOptions.registerOption(OPTION_BRACE_MATCHING, DEFAULT_BRACE_MATCHING, null,
@@ -1494,8 +1494,9 @@ public class ParadisePlugin extends ProgramPlugin {
 		JCheckBox viewSuggestions = new JCheckBox("Suggestions", showAuxTab("Suggestions"));
 		JCheckBox viewTriage = new JCheckBox("Triage", showAuxTab("Triage"));
 		JCheckBox viewCleanups = new JCheckBox("Cleanups", showAuxTab("Cleanups"));
-		JCheckBox viewFinds = new JCheckBox("URL/path finds window", showFindsWindow());
-		JCheckBox mergeFindRows = new JCheckBox("Merge repeated finds", mergeRepeatedFinds());
+		JCheckBox viewFinds = new JCheckBox("URL/path inspector window", showFindsWindow());
+		JCheckBox mergeFindRows = new JCheckBox("Merge repeated inspector rows",
+			mergeRepeatedFinds());
 		JCheckBox findColumnPriority = new JCheckBox("Priority", showFindColumn("Priority"));
 		JCheckBox findColumnCount = new JCheckBox("Count", showFindColumn("Count"));
 		JCheckBox findColumnKind = new JCheckBox("Kind", showFindColumn("Kind"));
@@ -1622,7 +1623,7 @@ public class ParadisePlugin extends ProgramPlugin {
 
 		JPanel findsPanel = settingsPanel();
 		GridBagConstraints findsGc = settingsConstraints();
-		addSectionHeader(findsPanel, findsGc, "Finds");
+		addSectionHeader(findsPanel, findsGc, "Inspector");
 		addOption(findsPanel, findsGc, optionSection("Window", 2, viewFinds, mergeFindRows));
 		addOption(findsPanel, findsGc, optionSection("Columns", 4, findColumnPriority,
 			findColumnCount, findColumnKind, findColumnAddress, findColumnUse, findColumnSource,
@@ -1644,7 +1645,7 @@ public class ParadisePlugin extends ProgramPlugin {
 			resetLayout));
 		addSettingsFiller(layoutPanel, layoutGc);
 
-		String[] pageNames = { "General", "Pseudocode", "Views", "Finds", "Cleanup", "Export",
+		String[] pageNames = { "General", "Pseudocode", "Views", "Inspector", "Cleanup", "Export",
 			"Layout" };
 		JList<String> pageList = new JList<>(pageNames);
 		pageList.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
@@ -1680,7 +1681,7 @@ public class ParadisePlugin extends ProgramPlugin {
 		pageCards.add(settingsScroll(generalPanel), "General");
 		pageCards.add(settingsScroll(pseudocodePanel), "Pseudocode");
 		pageCards.add(settingsScroll(viewsPanel), "Views");
-		pageCards.add(settingsScroll(findsPanel), "Finds");
+		pageCards.add(settingsScroll(findsPanel), "Inspector");
 		pageCards.add(settingsScroll(cleanupPanel), "Cleanup");
 		pageCards.add(settingsScroll(exportPanel), "Export");
 		pageCards.add(settingsScroll(layoutPanel), "Layout");

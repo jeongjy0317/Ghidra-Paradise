@@ -72,7 +72,7 @@ final class ParadiseFindProvider extends ComponentProvider {
 
 	private final ParadisePlugin plugin;
 	private final JPanel panel = new JPanel(new BorderLayout());
-	private final JLabel titleLabel = new JLabel("Paradise Finds");
+	private final JLabel titleLabel = new JLabel("Paradise Inspector");
 	private final JLabel statusLabel = new JLabel("No scan yet");
 	private final JTabbedPane tabs = new JTabbedPane();
 	private final DefaultTableModel overviewModel = model();
@@ -93,9 +93,9 @@ final class ParadiseFindProvider extends ComponentProvider {
 	private boolean lastWholeProgram;
 
 	ParadiseFindProvider(ParadisePlugin plugin) {
-		super(plugin.getTool(), "Paradise Finds", plugin.getName());
+		super(plugin.getTool(), "Paradise Inspector", plugin.getName());
 		this.plugin = plugin;
-		setTitle("Paradise Finds");
+		setTitle("Paradise Inspector");
 		setWindowMenuGroup("Paradise");
 		setDefaultWindowPosition(WindowPosition.RIGHT);
 		buildUi();
@@ -131,7 +131,8 @@ final class ParadiseFindProvider extends ComponentProvider {
 	void scanActiveFunction() {
 		Function function = plugin.activeFunctionForFinds();
 		if (function == null) {
-			Msg.showInfo(this, panel, "Paradise Finds", "Place the cursor inside a function first.");
+			Msg.showInfo(this, panel, "Paradise Inspector",
+				"Place the cursor inside a function first.");
 			return;
 		}
 		scanFunction(function);
@@ -140,7 +141,7 @@ final class ParadiseFindProvider extends ComponentProvider {
 	void scanWholeProgram() {
 		Program program = plugin.activeProgramForFinds();
 		if (program == null) {
-			Msg.showInfo(this, panel, "Paradise Finds", "Open a program first.");
+			Msg.showInfo(this, panel, "Paradise Inspector", "Open a program first.");
 			return;
 		}
 		scanProgram(program);
@@ -164,7 +165,7 @@ final class ParadiseFindProvider extends ComponentProvider {
 		lastWholeProgram = false;
 		setVisible(true);
 		statusLabel.setText("Scanning function " + function.getName() + "...");
-		TaskLauncher.launchNonModal("Paradise scan function finds", monitor -> {
+		TaskLauncher.launchNonModal("Paradise scan function inspector", monitor -> {
 			List<ParadiseFindScanner.Row> rows;
 			try {
 				rows = ParadiseFindScanner.scanFunction(function, plugin.mergeRepeatedFinds(),
@@ -175,7 +176,7 @@ final class ParadiseFindProvider extends ComponentProvider {
 			}
 			Swing.runLater(() -> showRows(rows,
 				function.getName() + " @ " + function.getEntryPoint() + ": " + rows.size() +
-					" finds"));
+					" items"));
 		});
 	}
 
@@ -185,7 +186,7 @@ final class ParadiseFindProvider extends ComponentProvider {
 		lastWholeProgram = true;
 		setVisible(true);
 		statusLabel.setText("Scanning whole program...");
-		TaskLauncher.launchNonModal("Paradise scan program finds", monitor -> {
+		TaskLauncher.launchNonModal("Paradise scan program inspector", monitor -> {
 			List<ParadiseFindScanner.Row> rows;
 			try {
 				rows = ParadiseFindScanner.scanProgram(program, plugin.mergeRepeatedFinds(),
@@ -194,7 +195,8 @@ final class ParadiseFindProvider extends ComponentProvider {
 			catch (CancelledException e) {
 				return;
 			}
-			Swing.runLater(() -> showRows(rows, program.getName() + ": " + rows.size() + " finds"));
+			Swing.runLater(() -> showRows(rows, program.getName() + ": " + rows.size() +
+				" items"));
 		});
 	}
 
@@ -281,7 +283,7 @@ final class ParadiseFindProvider extends ComponentProvider {
 
 	private void addToolbarAction(String name, FindGlyph glyph, String group, String subgroup,
 			BooleanSupplier enabled, Runnable handler) {
-		DockingAction action = new DockingAction("Paradise Finds " + name, plugin.getName()) {
+		DockingAction action = new DockingAction("Paradise Inspector " + name, plugin.getName()) {
 			@Override
 			public boolean isEnabledForContext(ActionContext context) {
 				return enabled.getAsBoolean();
@@ -411,7 +413,7 @@ final class ParadiseFindProvider extends ComponentProvider {
 
 	private void exportCsv() {
 		JFileChooser chooser = new JFileChooser();
-		chooser.setSelectedFile(new File("paradise_finds.csv"));
+		chooser.setSelectedFile(new File("paradise_inspector.csv"));
 		if (chooser.showSaveDialog(panel) != JFileChooser.APPROVE_OPTION) {
 			return;
 		}
