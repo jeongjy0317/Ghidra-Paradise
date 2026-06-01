@@ -11,7 +11,6 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import javax.swing.*;
-import javax.swing.border.TitledBorder;
 import javax.swing.event.DocumentEvent;
 import javax.swing.event.DocumentListener;
 import javax.swing.table.DefaultTableCellRenderer;
@@ -77,7 +76,6 @@ final class ParadiseDecompilerProvider extends ComponentProvider {
 	private final JLabel searchStatusLabel = new JLabel(" ");
 	private final JToggleButton rawToggle = new JToggleButton();
 	private final List<AbstractButton> headerButtons = new ArrayList<>();
-	private final List<JComponent> headerGroups = new ArrayList<>();
 	private boolean updatingSearchField;
 	private final Map<TabKey, PseudocodeTab> tabMap = new LinkedHashMap<>();
 	private final Deque<Function> backHistory = new ArrayDeque<>();
@@ -1896,12 +1894,6 @@ final class ParadiseDecompilerProvider extends ComponentProvider {
 		splitPane.setBackground(panelBg);
 		statusLabel.setForeground(text);
 		statusLabel.setBackground(panelBg);
-		for (JComponent group : headerGroups) {
-			group.setBackground(panelBg);
-			if (group.getBorder() instanceof TitledBorder border) {
-				border.setTitleColor(dark ? new Color(190, 198, 208) : new Color(80, 80, 80));
-			}
-		}
 		for (AbstractButton button : headerButtons) {
 			button.setBackground(dark ? new Color(54, 57, 62) : new Color(244, 244, 240));
 			button.setForeground(text);

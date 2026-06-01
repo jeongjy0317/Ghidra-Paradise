@@ -4,7 +4,6 @@ import java.awt.BorderLayout;
 import java.awt.CardLayout;
 import java.awt.Color;
 import java.awt.Dimension;
-import java.awt.Dialog;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.Insets;
@@ -19,7 +18,6 @@ import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
 
 import javax.swing.*;
-import javax.swing.table.DefaultTableModel;
 
 import docking.ActionContext;
 import docking.action.*;
