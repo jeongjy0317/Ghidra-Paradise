@@ -1,12 +1,16 @@
 package paradise;
 
 import java.awt.BorderLayout;
+import java.awt.CardLayout;
 import java.awt.Color;
 import java.awt.Component;
 import java.awt.Dimension;
 import java.awt.FlowLayout;
 import java.awt.Font;
 import java.awt.Graphics;
+import java.awt.GridBagConstraints;
+import java.awt.GridBagLayout;
+import java.awt.Insets;
 import java.awt.Toolkit;
 import java.awt.datatransfer.StringSelection;
 import java.awt.event.ActionEvent;
@@ -27,7 +31,10 @@ import java.util.regex.Pattern;
 
 import javax.swing.AbstractAction;
 import javax.swing.BorderFactory;
+import javax.swing.Box;
+import javax.swing.BoxLayout;
 import javax.swing.Icon;
+import javax.swing.JButton;
 import javax.swing.JComponent;
 import javax.swing.JFileChooser;
 import javax.swing.JLabel;
@@ -80,6 +87,9 @@ final class ParadiseFindProvider extends ComponentProvider {
 	private final JLabel titleLabel = new JLabel("Paradise Inspector");
 	private final JLabel statusLabel = new JLabel("No scan yet");
 	private final JTabbedPane tabs = new JTabbedPane();
+	private final CardLayout detailLayout = new CardLayout();
+	private final JPanel detailCards = new JPanel(detailLayout);
+	private final JTabbedPane detailTabs = new JTabbedPane();
 	private final JTextArea detailArea = new JTextArea("Select an Inspector row to view details.");
 	private final JTextField filterField = new JTextField(18);
 	private final DefaultTableModel overviewModel = model();
@@ -136,6 +146,8 @@ final class ParadiseFindProvider extends ComponentProvider {
 		applyColumnOptions(pathTable);
 		applyColumnOptions(shellTable);
 		applyColumnOptions(executeTable);
+		detailLayout.show(detailCards, plugin.inspectorDetailsScreen() ? "screen" : "text");
+		updateDetail();
 	}
 
 	boolean hasScan() {
@@ -262,7 +274,9 @@ final class ParadiseFindProvider extends ComponentProvider {
 		label.setBorder(BorderFactory.createEmptyBorder(2, 4, 2, 4));
 		label.setFont(label.getFont().deriveFont(Font.BOLD));
 		panel.add(label, BorderLayout.NORTH);
-		panel.add(new JScrollPane(detailArea), BorderLayout.CENTER);
+		detailCards.add(detailTabs, "screen");
+		detailCards.add(new JScrollPane(detailArea), "text");
+		panel.add(detailCards, BorderLayout.CENTER);
 		return panel;
 	}
 
@@ -453,6 +467,17 @@ final class ParadiseFindProvider extends ComponentProvider {
 		detailArea.setText(row == null ? "Select an Inspector row to view details."
 				: detailText(row));
 		detailArea.setCaretPosition(0);
+		detailTabs.removeAll();
+		if (row == null) {
+			JPanel page = detailPage();
+			addDetailSection(page, "Details",
+				List.<Object[]>of(new Object[] { "Status",
+					"Select an Inspector row to view details." }));
+			finishDetailPage(page);
+			detailTabs.addTab("Overview", detailScroll(page));
+			return;
+		}
+		fillDetailScreen(row);
 	}
 
 	private String detailText(ParadiseFindScanner.Row row) {
@@ -491,6 +516,175 @@ final class ParadiseFindProvider extends ComponentProvider {
 
 	private void appendDetail(StringBuilder builder, String label, Object value) {
 		builder.append(label).append(": ").append(Objects.toString(value, "")).append('\n');
+	}
+
+	private void fillDetailScreen(ParadiseFindScanner.Row row) {
+		JPanel overviewPage = detailPage();
+		JPanel valuePage = detailPage();
+		JPanel sourcePage = detailPage();
+		JPanel usePage = detailPage();
+		addDetailHeader(overviewPage, "Overview");
+		addDetailSection(overviewPage, "Summary", List.of(
+			new Object[] { "Brief", brief(row) },
+			new Object[] { "Kind", row.kind() },
+			new Object[] { "Priority", row.priority() },
+			new Object[] { "Count", row.count() },
+			new Object[] { "Address", row.textAddress() },
+			new Object[] { "Use", row.useAddress() }));
+		addDetailHeader(sourcePage, "Source");
+		addDetailSection(sourcePage, "Encoding", List.of(
+			new Object[] { "Source", row.source() },
+			new Object[] { "Decode Chain", row.chain() },
+			new Object[] { "Evidence", row.evidence() },
+			new Object[] { "String", row.textAddress() },
+			new Object[] { "Use", row.useAddress() },
+			new Object[] { "Original", row.rawValue() }));
+		List<Object[]> valueRows = new ArrayList<>();
+		valueRows.add(new Object[] { "Value", row.value() });
+		if (!Objects.equals(row.rawValue(), row.value())) {
+			valueRows.add(new Object[] { "Original", row.rawValue() });
+		}
+		addDetailHeader(valuePage, "Value");
+		addDetailSection(valuePage, "Decoded Text", valueRows);
+		List<ParadiseFindScanner.Usage> usages = row.usages();
+		addDetailHeader(usePage, "Use");
+		if (usages.isEmpty()) {
+			addDetailSection(usePage, "Use", List.<Object[]>of(new Object[] { "Status",
+				"No recorded uses" }));
+		}
+		else {
+			for (int i = 0; i < usages.size(); i++) {
+				ParadiseFindScanner.Usage usage = usages.get(i);
+				addDetailSection(usePage, "Use #" + (i + 1), List.of(
+					new Object[] { "Use", usage.useAddress() },
+					new Object[] { "String", usage.textAddress() },
+					new Object[] { "Source", usage.source() },
+					new Object[] { "Decode Chain", usage.chain() },
+					new Object[] { "Evidence", usage.evidence() },
+					new Object[] { "Original", usage.rawValue() }));
+			}
+		}
+		finishDetailPage(overviewPage);
+		finishDetailPage(valuePage);
+		finishDetailPage(sourcePage);
+		finishDetailPage(usePage);
+		detailTabs.addTab("Overview", detailScroll(overviewPage));
+		detailTabs.addTab("Value", detailScroll(valuePage));
+		detailTabs.addTab("Source", detailScroll(sourcePage));
+		detailTabs.addTab("Use", detailScroll(usePage));
+	}
+
+	private String brief(ParadiseFindScanner.Row row) {
+		String source = row.source() == null || row.source().isBlank() ? "raw" : row.source();
+		String chain = row.chain() == null || row.chain().isBlank() ? "no decode chain"
+				: row.chain();
+		return row.kind() + " finding from " + source + " data, " + chain + ".";
+	}
+
+	private JPanel detailPage() {
+		JPanel page = new JPanel();
+		page.setLayout(new BoxLayout(page, BoxLayout.Y_AXIS));
+		page.setBorder(BorderFactory.createEmptyBorder(6, 6, 6, 6));
+		page.setBackground(new Color(244, 245, 247));
+		return page;
+	}
+
+	private JScrollPane detailScroll(JPanel page) {
+		JScrollPane scrollPane = new JScrollPane(page);
+		scrollPane.setBorder(BorderFactory.createEmptyBorder());
+		scrollPane.getVerticalScrollBar().setUnitIncrement(16);
+		scrollPane.getViewport().setBackground(new Color(244, 245, 247));
+		return scrollPane;
+	}
+
+	private void addDetailHeader(JPanel page, String title) {
+		JLabel label = new JLabel(title);
+		label.setFont(label.getFont().deriveFont(Font.BOLD, 15f));
+		label.setBorder(BorderFactory.createEmptyBorder(4, 3, 4, 0));
+		label.setAlignmentX(Component.LEFT_ALIGNMENT);
+		page.add(label);
+	}
+
+	private void addDetailSection(JPanel page, String title, List<Object[]> rows) {
+		JPanel section = new JPanel(new GridBagLayout());
+		section.setBorder(BorderFactory.createCompoundBorder(
+			BorderFactory.createTitledBorder(title),
+			BorderFactory.createEmptyBorder(5, 6, 7, 6)));
+		section.setAlignmentX(Component.LEFT_ALIGNMENT);
+		section.setBackground(new Color(244, 245, 247));
+		GridBagConstraints gc = new GridBagConstraints();
+		gc.insets = new Insets(2, 4, 2, 10);
+		gc.anchor = GridBagConstraints.WEST;
+		for (int i = 0; i < rows.size(); i++) {
+			addDetailField(section, gc, i, Objects.toString(rows.get(i)[0], ""),
+				rows.get(i).length > 1 ? rows.get(i)[1] : "");
+		}
+		section.setMaximumSize(new Dimension(Integer.MAX_VALUE,
+			section.getPreferredSize().height));
+		page.add(section);
+		page.add(Box.createVerticalStrut(6));
+	}
+
+	private void addDetailField(JPanel section, GridBagConstraints gc, int row, String field,
+			Object value) {
+		JLabel fieldLabel = detailKey(field);
+		JComponent valueComponent = detailValue(value);
+		gc.gridy = row;
+		gc.gridx = 0;
+		gc.weightx = 0;
+		gc.fill = GridBagConstraints.NONE;
+		section.add(fieldLabel, gc);
+		gc.gridx = 1;
+		gc.weightx = 1;
+		gc.fill = GridBagConstraints.HORIZONTAL;
+		section.add(valueComponent, gc);
+	}
+
+	private JLabel detailKey(String text) {
+		JLabel label = new JLabel(text);
+		label.putClientProperty("html.disable", Boolean.TRUE);
+		label.setBorder(BorderFactory.createEmptyBorder(1, 2, 1, 2));
+		label.setFont(label.getFont().deriveFont(Font.BOLD));
+		return label;
+	}
+
+	private JComponent detailValue(Object value) {
+		String text = Objects.toString(value, "");
+		JTextArea area = new JTextArea(text);
+		area.setEditable(false);
+		area.setFocusable(false);
+		area.setOpaque(false);
+		area.setLineWrap(true);
+		area.setWrapStyleWord(false);
+		area.setColumns(48);
+		area.setRows(Math.max(1, Math.min(10, (text.length() / 88) + 1)));
+		area.setFont(new Font(Font.MONOSPACED, Font.PLAIN, area.getFont().getSize()));
+		area.setBorder(BorderFactory.createEmptyBorder(1, 2, 1, 2));
+		if (!(value instanceof Address address) || address == null) {
+			return area;
+		}
+		JPanel panel = new JPanel(new BorderLayout(6, 0));
+		panel.setOpaque(false);
+		JButton button = new JButton("Goto");
+		button.setToolTipText("Go to " + address);
+		button.addActionListener(e -> gotoAddress(address));
+		panel.add(area, BorderLayout.CENTER);
+		panel.add(button, BorderLayout.EAST);
+		return panel;
+	}
+
+	private void gotoAddress(Address address) {
+		if (address != null) {
+			plugin.navigateTo(address);
+		}
+	}
+
+	private void finishDetailPage(JPanel page) {
+		page.add(Box.createVerticalGlue());
+		if (page.getParent() != null) {
+			page.getParent().doLayout();
+		}
+		page.repaint();
 	}
 
 	private void gotoUsage() {

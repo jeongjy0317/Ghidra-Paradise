@@ -100,6 +100,7 @@ public class ParadisePlugin extends ProgramPlugin {
 	private static final String OPTION_FIND_COLUMN_CHAIN = "Show Inspector Decode Chain column";
 	private static final String OPTION_FIND_COLUMN_VALUE = "Show Inspector Value column";
 	private static final String OPTION_FIND_COLUMN_EVIDENCE = "Show Inspector Evidence column";
+	private static final String OPTION_FIND_DETAILS_RENDERER = "Inspector details renderer";
 	private static final String OPTION_CURRENT_LINE = "Highlight current line";
 	private static final String OPTION_BRACE_MATCHING = "Highlight matching braces";
 	private static final String OPTION_OPEN_CALLEE_NEW_TAB = "Open callees in new tabs";
@@ -149,6 +150,8 @@ public class ParadisePlugin extends ProgramPlugin {
 	private static final boolean DEFAULT_ADDRESS_COMMENTS = false;
 	private static final boolean DEFAULT_EXPORT_METADATA = true;
 	private static final boolean DEFAULT_FIND_MERGE_REPEATED = true;
+	private static final String FIND_DETAILS_SCREEN = "Screen";
+	private static final String FIND_DETAILS_TEXT = "Text";
 
 	private final ParadiseDecompilerEngine engine = new ParadiseDecompilerEngine();
 	private final ParadiseDecompilerProvider provider;
@@ -326,6 +329,11 @@ public class ParadisePlugin extends ProgramPlugin {
 			default -> null;
 		};
 		return option == null || options().getBoolean(option, true);
+	}
+
+	boolean inspectorDetailsScreen() {
+		return FIND_DETAILS_SCREEN.equals(options().getString(OPTION_FIND_DETAILS_RENDERER,
+			FIND_DETAILS_SCREEN));
 	}
 
 	boolean currentLineHighlight() {
@@ -1462,6 +1470,8 @@ public class ParadisePlugin extends ProgramPlugin {
 			"Show Value in the Paradise Inspector tables.");
 		toolOptions.registerOption(OPTION_FIND_COLUMN_EVIDENCE, true, null,
 			"Show Evidence in the Paradise Inspector tables.");
+		toolOptions.registerOption(OPTION_FIND_DETAILS_RENDERER, FIND_DETAILS_SCREEN, null,
+			"Render Paradise Inspector details as a scrollable screen or plain text.");
 		toolOptions.registerOption(OPTION_CURRENT_LINE, DEFAULT_CURRENT_LINE, null,
 			"Highlight the current pseudocode line.");
 		toolOptions.registerOption(OPTION_BRACE_MATCHING, DEFAULT_BRACE_MATCHING, null,
@@ -1539,6 +1549,10 @@ public class ParadisePlugin extends ProgramPlugin {
 		JCheckBox findColumnChain = new JCheckBox("Decode Chain", showFindColumn("Decode Chain"));
 		JCheckBox findColumnValue = new JCheckBox("Value", showFindColumn("Value"));
 		JCheckBox findColumnEvidence = new JCheckBox("Evidence", showFindColumn("Evidence"));
+		JComboBox<String> findDetailsRenderer =
+			new JComboBox<>(new String[] { FIND_DETAILS_SCREEN, FIND_DETAILS_TEXT });
+		findDetailsRenderer.setSelectedItem(options().getString(OPTION_FIND_DETAILS_RENDERER,
+			FIND_DETAILS_SCREEN));
 		JCheckBox currentLine = new JCheckBox("Highlight current line", currentLineHighlight());
 		JCheckBox braceMatch = new JCheckBox("Highlight matching braces", braceMatching());
 		JCheckBox newTabs = new JCheckBox("Open callees in new tabs", openCalleesInNewTabs());
@@ -1593,6 +1607,7 @@ public class ParadisePlugin extends ProgramPlugin {
 			findColumnChain.setSelected(true);
 			findColumnValue.setSelected(true);
 			findColumnEvidence.setSelected(true);
+			findDetailsRenderer.setSelectedItem(FIND_DETAILS_SCREEN);
 			currentLine.setSelected(DEFAULT_CURRENT_LINE);
 			braceMatch.setSelected(DEFAULT_BRACE_MATCHING);
 			highlightUses.setSelected(DEFAULT_HIGHLIGHT_USES);
@@ -1658,6 +1673,8 @@ public class ParadisePlugin extends ProgramPlugin {
 		GridBagConstraints findsGc = settingsConstraints();
 		addSectionHeader(findsPanel, findsGc, "Inspector");
 		addOption(findsPanel, findsGc, optionSection("Window", 2, viewFinds, mergeFindRows));
+		addOption(findsPanel, findsGc, optionSection("Details", 1,
+			labeledField("Renderer:", findDetailsRenderer)));
 		addOption(findsPanel, findsGc, optionSection("Columns", 4, findColumnPriority,
 			findColumnCount, findColumnKind, findColumnAddress, findColumnUse, findColumnSource,
 			findColumnChain, findColumnValue, findColumnEvidence));
@@ -1788,6 +1805,8 @@ public class ParadisePlugin extends ProgramPlugin {
 		toolOptions.setBoolean(OPTION_FIND_COLUMN_CHAIN, findColumnChain.isSelected());
 		toolOptions.setBoolean(OPTION_FIND_COLUMN_VALUE, findColumnValue.isSelected());
 		toolOptions.setBoolean(OPTION_FIND_COLUMN_EVIDENCE, findColumnEvidence.isSelected());
+		toolOptions.setString(OPTION_FIND_DETAILS_RENDERER,
+			Objects.toString(findDetailsRenderer.getSelectedItem(), FIND_DETAILS_SCREEN));
 		toolOptions.setBoolean(OPTION_CURRENT_LINE, currentLine.isSelected());
 		toolOptions.setBoolean(OPTION_BRACE_MATCHING, braceMatch.isSelected());
 		toolOptions.setBoolean(OPTION_OPEN_CALLEE_NEW_TAB, newTabs.isSelected());
@@ -1847,6 +1866,7 @@ public class ParadisePlugin extends ProgramPlugin {
 		toolOptions.setBoolean(OPTION_FIND_COLUMN_CHAIN, true);
 		toolOptions.setBoolean(OPTION_FIND_COLUMN_VALUE, true);
 		toolOptions.setBoolean(OPTION_FIND_COLUMN_EVIDENCE, true);
+		toolOptions.setString(OPTION_FIND_DETAILS_RENDERER, FIND_DETAILS_SCREEN);
 		toolOptions.setBoolean(OPTION_CURRENT_LINE, DEFAULT_CURRENT_LINE);
 		toolOptions.setBoolean(OPTION_BRACE_MATCHING, DEFAULT_BRACE_MATCHING);
 		toolOptions.setBoolean(OPTION_HIGHLIGHT_USES, DEFAULT_HIGHLIGHT_USES);
