@@ -32,13 +32,14 @@ Paradise does not replace Ghidra's decompiler. It uses Ghidra as the source of t
 - Encoded string detection for Base64, repeated Base64 decode chains, hex, URL percent encoding, Base32, UTF-16LE, and UTF-16BE. Detected string tabs appear only when that encoding is present, with decode counts shown when applicable.
 - Pseudocode context-menu decoding via `Decode from...` with auto and explicit decode choices.
 - String-table context actions for `Goto usage` and `Goto string`.
-- Paradise Inspector dockable window for decoded URL, path, and shell-operation review:
+- Paradise Inspector dockable window for decoded URL, path, shell-operation, and executable-launch review:
   - scans the active function or whole binary
   - decodes strings before matching
   - detects URLs, host/path patterns, Windows drive paths, UNC paths, environment paths, Unix paths, and relative paths
   - detects shell launchers and command strings such as PowerShell, `cmd /c`, `sh -c`, `bash -c`, `ls -al`, `rm -rf`, `curl`, `wget`, `certutil`, `bitsadmin`, and related command utilities
+  - detects executable launch strings such as `C:\ProgramData\run.exe --command2`, `./file`, and `./file --help`
   - groups repeated findings with a `Count` column when merge mode is enabled
-  - supports Overview, URLs, Paths, and Shell tabs with filters, configurable columns, CSV export, and usage navigation
+  - supports Overview, URLs, Paths, Shell, and Execute tabs with filters, configurable columns, CSV export, and usage navigation
   - `Goto usage` focuses the pseudocode line by address, original encoded text, or decoded text
 - Variable trace view that follows the current pseudocode line and shows static/symbolic value estimates where possible.
 - Suggestions and triage views for review targets such as suspicious XOR operations, call-heavy functions, string-heavy functions, and likely entry logic.
@@ -85,8 +86,8 @@ Open a program in CodeBrowser and use:
 - `Paradise > Pseudocode > Decompile` to open the current function in Paradise Pseudocode.
 - `Paradise > Diagram > Open Function Diagram` to open the current function graph.
 - `Paradise > Diagram > Open Binary Diagram` to open a binary-level overview.
-- `Paradise > Inspect > Scan Function Inspector` to scan the current function for decoded URLs, paths, and shell operations.
-- `Paradise > Inspect > Scan Binary Inspector` to scan the whole binary for decoded URLs, paths, and shell operations.
+- `Paradise > Inspect > Scan Function Inspector` to scan the current function for decoded URLs, paths, shell operations, and executable launches.
+- `Paradise > Inspect > Scan Binary Inspector` to scan the whole binary for decoded URLs, paths, shell operations, and executable launches.
 - `Paradise > Options > Settings` to configure display, navigation, cleanup, Inspector, export, and visible analysis tabs.
 - `Paradise > Export > Export Current Function` or `Export All Functions` to write cleaned C-like output.
 
@@ -94,7 +95,7 @@ Paradise also exposes provider-local toolbar buttons in the Pseudocode and Diagr
 
 In the Pseudocode viewer, right-click selected text or a string literal and use `Decode from...` to decode common encodings. In the `Strings` analysis tab, Paradise shows `Overview` plus per-detected-type subtabs such as `Base64`, `Hex`, `URL`, `Base32`, `UTF-16LE`, and `UTF-16BE`. Each string table has a filter field, and row context menus can jump to the usage in pseudocode or to the string data address.
 
-Use `Paradise Inspector` when you want a focused review surface for network, filesystem, and shell-operation artifacts. The Inspector scans plain strings and decoded strings, then lists matching URLs, paths, and command text. Right-click a row or press `Enter` to jump to the usage; decoded rows retain the original encoded source so navigation can still focus the line that contains the encoded literal.
+Use `Paradise Inspector` when you want a focused review surface for network, filesystem, shell-operation, and executable-launch artifacts. The Inspector scans plain strings and decoded strings, then lists matching URLs, paths, command text, and launch strings. Right-click a row or press `Enter` to jump to the usage; decoded rows retain the original encoded source so navigation can still focus the line that contains the encoded literal.
 
 ## Hotkeys
 

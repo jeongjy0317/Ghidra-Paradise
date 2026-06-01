@@ -294,13 +294,13 @@ final class ParadiseDecompilerProvider extends ComponentProvider {
 	}
 
 	boolean revealUsage(Address address, String rawValue, String value) {
-		if (address != null && revealAddress(address)) {
-			return true;
-		}
 		if (focusStringUsage(address, rawValue)) {
 			return true;
 		}
-		return !Objects.equals(rawValue, value) && focusStringUsage(address, value);
+		if (!Objects.equals(rawValue, value) && focusStringUsage(address, value)) {
+			return true;
+		}
+		return address != null && revealAddress(address);
 	}
 
 	void refreshCurrent() {
@@ -3570,19 +3570,45 @@ final class ParadiseDecompilerProvider extends ComponentProvider {
 			return false;
 		}
 		String text = tab.textPane.getText();
-		int index = text.indexOf(value);
-		int matchLength = value.length();
-		if (index < 0) {
-			String preview = previewString(value, Math.min(value.length(), 80));
-			index = preview.isBlank() ? -1 : text.indexOf(preview);
-			matchLength = preview.length();
+		for (String searchValue : usageSearchValues(value)) {
+			int index = text.indexOf(searchValue);
+			int matchLength = searchValue.length();
+			if (index < 0) {
+				String preview = previewString(searchValue, Math.min(searchValue.length(), 80));
+				index = preview.isBlank() ? -1 : text.indexOf(preview);
+				matchLength = preview.length();
+			}
+			if (index >= 0) {
+				selectRange(tab, index, index + Math.min(matchLength, text.length() - index));
+				focusText();
+				return true;
+			}
 		}
-		if (index < 0) {
-			return false;
+		return false;
+	}
+
+	private List<String> usageSearchValues(String value) {
+		List<String> values = new ArrayList<>();
+		addSearchValue(values, value);
+		addSearchValue(values, cEscapedSearchValue(value));
+		return values;
+	}
+
+	private void addSearchValue(List<String> values, String value) {
+		if (value != null && !value.isBlank() && !values.contains(value)) {
+			values.add(value);
 		}
-		selectRange(tab, index, index + Math.min(matchLength, text.length() - index));
-		focusText();
-		return true;
+	}
+
+	private String cEscapedSearchValue(String value) {
+		if (value == null) {
+			return "";
+		}
+		return value.replace("\\", "\\\\")
+				.replace("\"", "\\\"")
+				.replace("\n", "\\n")
+				.replace("\r", "\\r")
+				.replace("\t", "\\t");
 	}
 
 	private MouseAdapter tableDoubleClick(Runnable runnable) {

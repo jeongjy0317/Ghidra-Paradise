@@ -461,14 +461,17 @@ public class ParadisePlugin extends ProgramPlugin {
 
 	void focusPseudocodeUsage(Address address, String rawValue, String value) {
 		if (address == null) {
+			revealCurrentPseudocodeUsage(rawValue, value);
 			return;
 		}
 		Program program = navigationProgram();
 		if (program == null) {
+			revealCurrentPseudocodeUsage(rawValue, value);
 			return;
 		}
 		Function function = program.getFunctionManager().getFunctionContaining(address);
 		if (function == null) {
+			revealCurrentPseudocodeUsage(rawValue, value);
 			return;
 		}
 		Function displayed = provider.displayedFunction();
@@ -479,6 +482,13 @@ public class ParadisePlugin extends ProgramPlugin {
 			return;
 		}
 		decompileFunction(function, false, false, true, true, address, rawValue, value);
+	}
+
+	private void revealCurrentPseudocodeUsage(String rawValue, String value) {
+		if (provider.currentResult() != null && revealPseudocodeUsage(null, rawValue, value)) {
+			provider.setVisible(true);
+			provider.focusText();
+		}
 	}
 
 	private boolean revealPseudocodeUsage(Address address, String rawValue, String value) {
