@@ -5,6 +5,7 @@ import java.awt.Color;
 import java.awt.Component;
 import java.awt.Dimension;
 import java.awt.FlowLayout;
+import java.awt.Font;
 import java.awt.Graphics;
 import java.awt.Toolkit;
 import java.awt.datatransfer.StringSelection;
@@ -34,8 +35,10 @@ import javax.swing.JMenuItem;
 import javax.swing.JPanel;
 import javax.swing.JPopupMenu;
 import javax.swing.JScrollPane;
+import javax.swing.JSplitPane;
 import javax.swing.JTabbedPane;
 import javax.swing.JTable;
+import javax.swing.JTextArea;
 import javax.swing.JTextField;
 import javax.swing.KeyStroke;
 import javax.swing.RowFilter;
@@ -77,6 +80,7 @@ final class ParadiseFindProvider extends ComponentProvider {
 	private final JLabel titleLabel = new JLabel("Paradise Inspector");
 	private final JLabel statusLabel = new JLabel("No scan yet");
 	private final JTabbedPane tabs = new JTabbedPane();
+	private final JTextArea detailArea = new JTextArea("Select an Inspector row to view details.");
 	private final JTextField filterField = new JTextField(18);
 	private final DefaultTableModel overviewModel = model();
 	private final DefaultTableModel urlModel = model();
@@ -223,6 +227,7 @@ final class ParadiseFindProvider extends ComponentProvider {
 		fill(shellModel, shellRows);
 		fill(executeModel, executeRows);
 		statusLabel.setText(status);
+		updateDetail();
 		contextChanged();
 	}
 
@@ -237,9 +242,28 @@ final class ParadiseFindProvider extends ComponentProvider {
 		tabs.addTab("Paths", tablePanel(pathTable));
 		tabs.addTab("Shell", tablePanel(shellTable));
 		tabs.addTab("Execute", tablePanel(executeTable));
+		tabs.addChangeListener(e -> updateDetail());
+		detailArea.setEditable(false);
+		detailArea.setRows(7);
+		detailArea.setLineWrap(true);
+		detailArea.setWrapStyleWord(false);
+		detailArea.setFont(new Font(Font.MONOSPACED, Font.PLAIN, detailArea.getFont().getSize()));
+		JSplitPane splitPane = new JSplitPane(JSplitPane.VERTICAL_SPLIT, tabs, detailPanel());
+		splitPane.setResizeWeight(0.78);
+		splitPane.setDividerSize(8);
 		panel.add(header, BorderLayout.NORTH);
-		panel.add(tabs, BorderLayout.CENTER);
+		panel.add(splitPane, BorderLayout.CENTER);
 		panel.add(statusLabel, BorderLayout.SOUTH);
+	}
+
+	private JPanel detailPanel() {
+		JPanel panel = new JPanel(new BorderLayout());
+		JLabel label = new JLabel("Details");
+		label.setBorder(BorderFactory.createEmptyBorder(2, 4, 2, 4));
+		label.setFont(label.getFont().deriveFont(Font.BOLD));
+		panel.add(label, BorderLayout.NORTH);
+		panel.add(new JScrollPane(detailArea), BorderLayout.CENTER);
+		return panel;
 	}
 
 	private JPanel tablePanel(JTable table) {
@@ -344,6 +368,11 @@ final class ParadiseFindProvider extends ComponentProvider {
 		popup.add(item("Goto string", this::gotoString));
 		popup.addSeparator();
 		popup.add(item("Copy value", this::copySelected));
+		table.getSelectionModel().addListSelectionListener(e -> {
+			if (!e.getValueIsAdjusting()) {
+				updateDetail();
+			}
+		});
 		table.addMouseListener(new MouseAdapter() {
 			@Override
 			public void mouseClicked(MouseEvent e) {
@@ -417,6 +446,51 @@ final class ParadiseFindProvider extends ComponentProvider {
 			case 4 -> executeRows;
 			default -> overviewRows;
 		};
+	}
+
+	private void updateDetail() {
+		ParadiseFindScanner.Row row = selectedRow();
+		detailArea.setText(row == null ? "Select an Inspector row to view details."
+				: detailText(row));
+		detailArea.setCaretPosition(0);
+	}
+
+	private String detailText(ParadiseFindScanner.Row row) {
+		StringBuilder builder = new StringBuilder();
+		appendDetail(builder, "Kind", row.kind());
+		appendDetail(builder, "Priority", row.priority());
+		appendDetail(builder, "Count", row.count());
+		appendDetail(builder, "Address", row.textAddress());
+		appendDetail(builder, "Use", row.useAddress());
+		appendDetail(builder, "Source", row.source());
+		appendDetail(builder, "Decode Chain", row.chain());
+		appendDetail(builder, "Evidence", row.evidence());
+		builder.append('\n');
+		appendDetail(builder, "Value", row.value());
+		if (!Objects.equals(row.rawValue(), row.value())) {
+			appendDetail(builder, "Original", row.rawValue());
+		}
+		builder.append('\n').append("Usages").append('\n');
+		List<ParadiseFindScanner.Usage> usages = row.usages();
+		if (usages.isEmpty()) {
+			builder.append("  none\n");
+			return builder.toString();
+		}
+		for (int i = 0; i < usages.size(); i++) {
+			ParadiseFindScanner.Usage usage = usages.get(i);
+			builder.append("  #").append(i + 1).append('\n');
+			appendDetail(builder, "    Use", usage.useAddress());
+			appendDetail(builder, "    String", usage.textAddress());
+			appendDetail(builder, "    Source", usage.source());
+			appendDetail(builder, "    Decode Chain", usage.chain());
+			appendDetail(builder, "    Evidence", usage.evidence());
+			appendDetail(builder, "    Original", usage.rawValue());
+		}
+		return builder.toString();
+	}
+
+	private void appendDetail(StringBuilder builder, String label, Object value) {
+		builder.append(label).append(": ").append(Objects.toString(value, "")).append('\n');
 	}
 
 	private void gotoUsage() {

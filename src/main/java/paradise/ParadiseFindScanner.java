@@ -357,13 +357,15 @@ final class ParadiseFindScanner {
 					Objects.toString(source.textAddress(), "") + "\u0000" +
 					Objects.toString(source.useAddress(), "") + "\u0000" + text.source() +
 					"\u0000" + text.chain();
+		Usage usage = new Usage(source.textAddress(), source.useAddress(), text.source(),
+			text.chain(), source.value(), evidence);
 		Row existing = rows.get(key);
 		if (existing == null) {
 			rows.put(key, new Row(priority, 1, kind, source.textAddress(), source.useAddress(),
-				text.source(), text.chain(), value, source.value(), evidence));
+				text.source(), text.chain(), value, source.value(), evidence, List.of(usage)));
 			return;
 		}
-		rows.put(key, mergeRepeated ? existing.withOccurrence(priority) : existing);
+		rows.put(key, mergeRepeated ? existing.withOccurrence(priority, usage) : existing);
 	}
 
 	private static String normalizeUrlText(String value) {
@@ -492,11 +494,18 @@ final class ParadiseFindScanner {
 	}
 
 	record Row(int priority, int count, String kind, Address textAddress, Address useAddress,
-			String source, String chain, String value, String rawValue, String evidence) {
-		private Row withOccurrence(int priority) {
+			String source, String chain, String value, String rawValue, String evidence,
+			List<Usage> usages) {
+		private Row withOccurrence(int priority, Usage usage) {
+			List<Usage> mergedUsages = new ArrayList<>(usages);
+			mergedUsages.add(usage);
 			return new Row(Math.min(this.priority, priority), count + 1, kind, textAddress,
-				useAddress, source, chain, value, rawValue, evidence);
+				useAddress, source, chain, value, rawValue, evidence, List.copyOf(mergedUsages));
 		}
+	}
+
+	record Usage(Address textAddress, Address useAddress, String source, String chain,
+			String rawValue, String evidence) {
 	}
 
 	private record TextSource(Address useAddress, Address textAddress, String value) {
