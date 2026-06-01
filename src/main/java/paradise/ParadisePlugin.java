@@ -1618,11 +1618,16 @@ public class ParadisePlugin extends ProgramPlugin {
 		addOption(viewsPanel, viewsGc, optionSection("Visible Tabs", 3, viewXrefs,
 			viewLocals, viewTrace, viewCalls, viewStrings, viewDiff, viewDrafts,
 			viewSuggestions, viewTriage, viewCleanups));
-		addOption(viewsPanel, viewsGc, optionSection("Finds", 2, viewFinds, mergeFindRows));
-		addOption(viewsPanel, viewsGc, optionSection("Finds Columns", 4, findColumnPriority,
+		addSettingsFiller(viewsPanel, viewsGc);
+
+		JPanel findsPanel = settingsPanel();
+		GridBagConstraints findsGc = settingsConstraints();
+		addSectionHeader(findsPanel, findsGc, "Finds");
+		addOption(findsPanel, findsGc, optionSection("Window", 2, viewFinds, mergeFindRows));
+		addOption(findsPanel, findsGc, optionSection("Columns", 4, findColumnPriority,
 			findColumnCount, findColumnKind, findColumnAddress, findColumnUse, findColumnSource,
 			findColumnChain, findColumnValue, findColumnEvidence));
-		addSettingsFiller(viewsPanel, viewsGc);
+		addSettingsFiller(findsPanel, findsGc);
 
 		JPanel exportPanel = settingsPanel();
 		GridBagConstraints exportGc = settingsConstraints();
@@ -1639,7 +1644,8 @@ public class ParadisePlugin extends ProgramPlugin {
 			resetLayout));
 		addSettingsFiller(layoutPanel, layoutGc);
 
-		String[] pageNames = { "General", "Pseudocode", "Views", "Cleanup", "Export", "Layout" };
+		String[] pageNames = { "General", "Pseudocode", "Views", "Finds", "Cleanup", "Export",
+			"Layout" };
 		JList<String> pageList = new JList<>(pageNames);
 		pageList.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
 		pageList.setSelectedIndex(0);
@@ -1674,6 +1680,7 @@ public class ParadisePlugin extends ProgramPlugin {
 		pageCards.add(settingsScroll(generalPanel), "General");
 		pageCards.add(settingsScroll(pseudocodePanel), "Pseudocode");
 		pageCards.add(settingsScroll(viewsPanel), "Views");
+		pageCards.add(settingsScroll(findsPanel), "Finds");
 		pageCards.add(settingsScroll(cleanupPanel), "Cleanup");
 		pageCards.add(settingsScroll(exportPanel), "Export");
 		pageCards.add(settingsScroll(layoutPanel), "Layout");
