@@ -1473,65 +1473,53 @@ public class ParadisePlugin extends ProgramPlugin {
 
 		JPanel generalPanel = settingsPanel();
 		GridBagConstraints generalGc = settingsConstraints();
-		addOption(generalPanel, generalGc, hotkeys);
-		addOption(generalPanel, generalGc, syncListing);
-		addOption(generalPanel, generalGc, followExternal);
-		addOption(generalPanel, generalGc, newTabs);
-		addOption(generalPanel, generalGc, xrefPseudocode);
-		addOption(generalPanel, generalGc, highlightUses);
-		addLabeledOption(generalPanel, generalGc, "Decompiler timeout seconds:", timeout);
+		addOption(generalPanel, generalGc, optionSection("Input and Sync", 2, hotkeys,
+			syncListing, followExternal, highlightUses));
+		addOption(generalPanel, generalGc, optionSection("Navigation", 2, newTabs,
+			xrefPseudocode, detectedMain));
+		addOption(generalPanel, generalGc, optionSection("Decompiler", 1,
+			labeledField("Timeout seconds:", timeout)));
 		addSettingsFiller(generalPanel, generalGc);
 
 		JPanel pseudocodePanel = settingsPanel();
 		GridBagConstraints pseudocodeGc = settingsConstraints();
-		addLabeledOption(pseudocodePanel, pseudocodeGc, "Theme preset:", themePreset);
-		addLabeledOption(pseudocodePanel, pseudocodeGc, "Pseudocode font size:", fontSize);
-		addOption(pseudocodePanel, pseudocodeGc, gutter);
-		addOption(pseudocodePanel, pseudocodeGc, lineNumbers);
-		addOption(pseudocodePanel, pseudocodeGc, tokenAddresses);
-		addOption(pseudocodePanel, pseudocodeGc, currentLine);
-		addOption(pseudocodePanel, pseudocodeGc, braceMatch);
+		addOption(pseudocodePanel, pseudocodeGc, optionSection("Appearance", 2,
+			labeledField("Theme preset:", themePreset),
+			labeledField("Font size:", fontSize)));
+		addOption(pseudocodePanel, pseudocodeGc, optionSection("Gutter", 3, gutter,
+			lineNumbers, tokenAddresses));
+		addOption(pseudocodePanel, pseudocodeGc, optionSection("Highlights", 2, currentLine,
+			braceMatch));
 		addSettingsFiller(pseudocodePanel, pseudocodeGc);
 
 		JPanel cleanupPanel = settingsPanel();
 		GridBagConstraints cleanupGc = settingsConstraints();
-		addOption(cleanupPanel, cleanupGc, cleanC);
-		addOption(cleanupPanel, cleanupGc, cleanLiterals);
-		addOption(cleanupPanel, cleanupGc, stackCanaryCleanup);
-		addOption(cleanupPanel, cleanupGc, loopCleanup);
-		addOption(cleanupPanel, cleanupGc, conditionCleanup);
-		addOption(cleanupPanel, cleanupGc, compoundCleanup);
-		addOption(cleanupPanel, cleanupGc, callArgumentCleanup);
-		addOption(cleanupPanel, cleanupGc, localAliasDisplay);
-		addOption(cleanupPanel, cleanupGc, typeAliases);
-		addOption(cleanupPanel, cleanupGc, addressComments);
-		addOption(cleanupPanel, cleanupGc, detectedMain);
+		addOption(cleanupPanel, cleanupGc, optionSection("Clean C", 2, cleanC, cleanLiterals,
+			typeAliases, addressComments));
+		addOption(cleanupPanel, cleanupGc, optionSection("Cleanup Rules", 2,
+			stackCanaryCleanup, loopCleanup, conditionCleanup, compoundCleanup,
+			callArgumentCleanup, localAliasDisplay));
 		addSettingsFiller(cleanupPanel, cleanupGc);
 
 		JPanel viewsPanel = settingsPanel();
 		GridBagConstraints viewsGc = settingsConstraints();
-		addOption(viewsPanel, viewsGc, auxPanels);
-		addOption(viewsPanel, viewsGc, viewXrefs);
-		addOption(viewsPanel, viewsGc, viewLocals);
-		addOption(viewsPanel, viewsGc, viewTrace);
-		addOption(viewsPanel, viewsGc, viewCalls);
-		addOption(viewsPanel, viewsGc, viewStrings);
-		addOption(viewsPanel, viewsGc, viewDiff);
-		addOption(viewsPanel, viewsGc, viewDrafts);
-		addOption(viewsPanel, viewsGc, viewSuggestions);
-		addOption(viewsPanel, viewsGc, viewTriage);
-		addOption(viewsPanel, viewsGc, viewCleanups);
+		addOption(viewsPanel, viewsGc, optionSection("Analysis Pane", 1, auxPanels));
+		addOption(viewsPanel, viewsGc, optionSection("Visible Tabs", 3, viewXrefs,
+			viewLocals, viewTrace, viewCalls, viewStrings, viewDiff, viewDrafts,
+			viewSuggestions, viewTriage, viewCleanups));
 		addSettingsFiller(viewsPanel, viewsGc);
 
 		JPanel exportPanel = settingsPanel();
 		GridBagConstraints exportGc = settingsConstraints();
-		addLabeledOption(exportPanel, exportGc, "Export mode:", exportMode);
-		addOption(exportPanel, exportGc, metadata);
+		addOption(exportPanel, exportGc, optionSection("Output", 2,
+			labeledField("Export mode:", exportMode), metadata));
 		addSettingsFiller(exportPanel, exportGc);
 
 		JPanel layoutPanel = settingsPanel();
 		GridBagConstraints layoutGc = settingsConstraints();
-		addOption(layoutPanel, layoutGc, resetLayout);
+		addOption(layoutPanel, layoutGc, optionSection("Window Layout", 1,
+			new JLabel("Restore Paradise panes, tabs, theme, and cleanup defaults."),
+			resetLayout));
 		addSettingsFiller(layoutPanel, layoutGc);
 
 		tabs.addTab("General", generalPanel);
@@ -1540,7 +1528,8 @@ public class ParadisePlugin extends ProgramPlugin {
 		tabs.addTab("Cleanup", cleanupPanel);
 		tabs.addTab("Export", exportPanel);
 		tabs.addTab("Layout", layoutPanel);
-		tabs.setPreferredSize(new Dimension(440, 300));
+		tabs.setPreferredSize(new Dimension(680, 430));
+		tabs.setMinimumSize(new Dimension(620, 380));
 
 		int response = JOptionPane.showConfirmDialog(provider.getComponent(), tabs,
 			"Paradise Settings", JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE);
@@ -1654,23 +1643,42 @@ public class ParadisePlugin extends ProgramPlugin {
 		gc.gridy++;
 	}
 
-	private void addLabeledOption(JPanel panel, GridBagConstraints gc, String label,
-			JComponent component) {
-		gc.gridwidth = 1;
-		gc.gridx = 0;
-		gc.weightx = 0;
-		gc.fill = GridBagConstraints.NONE;
-		panel.add(new JLabel(label), gc);
-		gc.gridx = 1;
-		gc.weightx = 1;
-		gc.fill = GridBagConstraints.HORIZONTAL;
-		panel.add(component, gc);
-		gc.gridy++;
-	}
-
 	private JPanel settingsPanel() {
 		JPanel panel = new JPanel(new GridBagLayout());
-		panel.setBorder(BorderFactory.createEmptyBorder(8, 8, 8, 8));
+		panel.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
+		return panel;
+	}
+
+	private JPanel optionSection(String title, int columns, JComponent... components) {
+		JPanel panel = new JPanel(new GridBagLayout());
+		panel.setBorder(BorderFactory.createCompoundBorder(BorderFactory.createTitledBorder(title),
+			BorderFactory.createEmptyBorder(5, 6, 7, 6)));
+		GridBagConstraints gc = new GridBagConstraints();
+		gc.insets = new Insets(2, 4, 2, 10);
+		gc.anchor = GridBagConstraints.WEST;
+		gc.fill = GridBagConstraints.HORIZONTAL;
+		gc.weightx = 1;
+		int safeColumns = Math.max(1, columns);
+		for (int i = 0; i < components.length; i++) {
+			JComponent component = components[i];
+			gc.gridx = i % safeColumns;
+			gc.gridy = i / safeColumns;
+			panel.add(component, gc);
+		}
+		for (int i = components.length; i < safeColumns; i++) {
+			gc.gridx = i;
+			gc.gridy = 0;
+			panel.add(Box.createHorizontalStrut(1), gc);
+		}
+		return panel;
+	}
+
+	private JPanel labeledField(String label, JComponent component) {
+		JPanel panel = new JPanel(new BorderLayout(8, 0));
+		JLabel labelComponent = new JLabel(label);
+		labelComponent.setLabelFor(component);
+		panel.add(labelComponent, BorderLayout.WEST);
+		panel.add(component, BorderLayout.CENTER);
 		return panel;
 	}
 
