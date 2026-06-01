@@ -8,12 +8,11 @@ import java.awt.Dimension;
 import java.awt.FlowLayout;
 import java.awt.Font;
 import java.awt.Graphics;
-import java.awt.GridBagConstraints;
-import java.awt.GridBagLayout;
-import java.awt.Insets;
 import java.awt.Toolkit;
 import java.awt.datatransfer.StringSelection;
 import java.awt.event.ActionEvent;
+import java.awt.event.ComponentAdapter;
+import java.awt.event.ComponentEvent;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.io.BufferedWriter;
@@ -53,6 +52,7 @@ import javax.swing.SwingUtilities;
 import javax.swing.table.DefaultTableCellRenderer;
 import javax.swing.table.DefaultTableModel;
 import javax.swing.table.JTableHeader;
+import javax.swing.table.TableCellRenderer;
 import javax.swing.table.TableColumn;
 import javax.swing.table.TableRowSorter;
 
@@ -532,12 +532,15 @@ final class ParadiseFindProvider extends ComponentProvider {
 			new Object[] { "Address", row.textAddress() },
 			new Object[] { "Use", row.useAddress() }));
 		addDetailHeader(sourcePage, "Source");
-		addDetailSection(sourcePage, "Encoding", List.of(
+		addDetailSection(sourcePage, "Encoding Info", List.of(
 			new Object[] { "Source", row.source() },
 			new Object[] { "Decode Chain", row.chain() },
-			new Object[] { "Evidence", row.evidence() },
+			new Object[] { "Steps", decodeStepCount(row.chain()) },
+			new Object[] { "Evidence", row.evidence() }));
+		addDetailSection(sourcePage, "Locations", List.of(
 			new Object[] { "String", row.textAddress() },
-			new Object[] { "Use", row.useAddress() },
+			new Object[] { "Use", row.useAddress() }));
+		addDetailSection(sourcePage, "Raw Data", List.<Object[]>of(
 			new Object[] { "Original", row.rawValue() }));
 		List<Object[]> valueRows = new ArrayList<>();
 		valueRows.add(new Object[] { "Value", row.value() });
@@ -545,7 +548,7 @@ final class ParadiseFindProvider extends ComponentProvider {
 			valueRows.add(new Object[] { "Original", row.rawValue() });
 		}
 		addDetailHeader(valuePage, "Value");
-		addDetailSection(valuePage, "Decoded Text", valueRows);
+		addDetailSection(valuePage, "Decoded Text", valueRows, true);
 		List<ParadiseFindScanner.Usage> usages = row.usages();
 		addDetailHeader(usePage, "Use");
 		if (usages.isEmpty()) {
@@ -581,6 +584,19 @@ final class ParadiseFindProvider extends ComponentProvider {
 		return row.kind() + " finding from " + source + " data, " + chain + ".";
 	}
 
+	private int decodeStepCount(String chain) {
+		if (chain == null || chain.isBlank()) {
+			return 0;
+		}
+		int count = 1;
+		for (int i = 0; i < chain.length(); i++) {
+			if (chain.charAt(i) == '>') {
+				count++;
+			}
+		}
+		return count;
+	}
+
 	private JPanel detailPage() {
 		JPanel page = new JPanel();
 		page.setLayout(new BoxLayout(page, BoxLayout.Y_AXIS));
@@ -606,77 +622,221 @@ final class ParadiseFindProvider extends ComponentProvider {
 	}
 
 	private void addDetailSection(JPanel page, String title, List<Object[]> rows) {
-		JPanel section = new JPanel(new GridBagLayout());
+		addDetailSection(page, title, rows, false);
+	}
+
+	private void addDetailSection(JPanel page, String title, List<Object[]> rows,
+			boolean copyValues) {
+		JPanel section = new JPanel(new BorderLayout());
 		section.setBorder(BorderFactory.createCompoundBorder(
 			BorderFactory.createTitledBorder(title),
 			BorderFactory.createEmptyBorder(5, 6, 7, 6)));
 		section.setAlignmentX(Component.LEFT_ALIGNMENT);
 		section.setBackground(new Color(244, 245, 247));
-		GridBagConstraints gc = new GridBagConstraints();
-		gc.insets = new Insets(2, 4, 2, 10);
-		gc.anchor = GridBagConstraints.WEST;
-		for (int i = 0; i < rows.size(); i++) {
-			addDetailField(section, gc, i, Objects.toString(rows.get(i)[0], ""),
-				rows.get(i).length > 1 ? rows.get(i)[1] : "");
-		}
-		section.setMaximumSize(new Dimension(Integer.MAX_VALUE,
-			section.getPreferredSize().height));
+		JTable table = detailTable(rows, copyValues);
+		section.add(table.getTableHeader(), BorderLayout.NORTH);
+		section.add(table, BorderLayout.CENTER);
+		installDetailTableSizing(table, section);
 		page.add(section);
 		page.add(Box.createVerticalStrut(6));
 	}
 
-	private void addDetailField(JPanel section, GridBagConstraints gc, int row, String field,
-			Object value) {
-		JLabel fieldLabel = detailKey(field);
-		JComponent valueComponent = detailValue(value);
-		gc.gridy = row;
-		gc.gridx = 0;
-		gc.weightx = 0;
-		gc.fill = GridBagConstraints.NONE;
-		section.add(fieldLabel, gc);
-		gc.gridx = 1;
-		gc.weightx = 1;
-		gc.fill = GridBagConstraints.HORIZONTAL;
-		section.add(valueComponent, gc);
-	}
-
-	private JLabel detailKey(String text) {
-		JLabel label = new JLabel(text);
-		label.putClientProperty("html.disable", Boolean.TRUE);
-		label.setBorder(BorderFactory.createEmptyBorder(1, 2, 1, 2));
-		label.setFont(label.getFont().deriveFont(Font.BOLD));
-		return label;
-	}
-
-	private JComponent detailValue(Object value) {
-		String text = Objects.toString(value, "");
-		JTextArea area = new JTextArea(text);
-		area.setEditable(false);
-		area.setFocusable(false);
-		area.setOpaque(false);
-		area.setLineWrap(true);
-		area.setWrapStyleWord(false);
-		area.setColumns(48);
-		area.setRows(Math.max(1, Math.min(10, (text.length() / 88) + 1)));
-		area.setFont(new Font(Font.MONOSPACED, Font.PLAIN, area.getFont().getSize()));
-		area.setBorder(BorderFactory.createEmptyBorder(1, 2, 1, 2));
-		if (!(value instanceof Address address) || address == null) {
-			return area;
+	private JTable detailTable(List<Object[]> rows, boolean copyValues) {
+		DefaultTableModel model = new DefaultTableModel(new String[] { "Field", "Value", "" }, 0) {
+			@Override
+			public boolean isCellEditable(int row, int column) {
+				return false;
+			}
+		};
+		for (Object[] row : rows) {
+			Object value = row.length > 1 ? row[1] : "";
+			Address address = value instanceof Address found ? found : null;
+			model.addRow(new Object[] { Objects.toString(row[0], ""), Objects.toString(value, ""),
+				copyValues ? Objects.toString(value, "") : address });
 		}
-		JPanel panel = new JPanel(new BorderLayout(6, 0));
-		panel.setOpaque(false);
-		JButton button = new JButton("Goto");
-		button.setToolTipText("Go to " + address);
-		button.addActionListener(e -> gotoAddress(address));
-		panel.add(area, BorderLayout.CENTER);
-		panel.add(button, BorderLayout.EAST);
-		return panel;
+		JTable table = new JTable(model);
+		table.setAutoResizeMode(JTable.AUTO_RESIZE_ALL_COLUMNS);
+		table.setFillsViewportHeight(false);
+		table.setRowHeight(22);
+		table.setShowGrid(true);
+		table.setGridColor(new Color(210, 210, 205));
+		table.setBackground(Color.WHITE);
+		table.setForeground(new Color(24, 24, 24));
+		table.setSelectionBackground(new Color(204, 226, 255));
+		table.setSelectionForeground(Color.BLACK);
+		table.getTableHeader().setReorderingAllowed(false);
+		table.getTableHeader().setBackground(new Color(232, 232, 226));
+		table.getTableHeader().setForeground(new Color(24, 24, 24));
+		table.getTableHeader().setFont(table.getFont().deriveFont(Font.BOLD));
+		TableColumn fieldColumn = table.getColumnModel().getColumn(0);
+		TableColumn valueColumn = table.getColumnModel().getColumn(1);
+		TableColumn actionColumn = table.getColumnModel().getColumn(2);
+		fieldColumn.setPreferredWidth(150);
+		fieldColumn.setMinWidth(96);
+		fieldColumn.setMaxWidth(220);
+		valueColumn.setPreferredWidth(640);
+		valueColumn.setMinWidth(160);
+		actionColumn.setPreferredWidth(78);
+		actionColumn.setMinWidth(72);
+		actionColumn.setMaxWidth(86);
+		table.getColumnModel().getColumn(0).setCellRenderer(new DetailFieldRenderer());
+		table.getColumnModel().getColumn(1).setCellRenderer(new DetailValueRenderer());
+		table.getColumnModel().getColumn(2).setCellRenderer(copyValues ? new DetailCopyRenderer()
+				: new DetailGotoRenderer());
+		table.addMouseListener(new MouseAdapter() {
+			@Override
+			public void mouseClicked(MouseEvent e) {
+				int viewColumn = table.columnAtPoint(e.getPoint());
+				int viewRow = table.rowAtPoint(e.getPoint());
+				if (viewRow < 0 || viewColumn < 0 ||
+					table.convertColumnIndexToModel(viewColumn) != 2) {
+					return;
+				}
+				Object action = model.getValueAt(table.convertRowIndexToModel(viewRow), 2);
+				if (copyValues && action instanceof String value) {
+					copyText(value);
+				}
+				else if (action instanceof Address address) {
+					gotoAddress(address);
+				}
+			}
+		});
+		table.setPreferredScrollableViewportSize(new Dimension(1,
+			table.getTableHeader().getPreferredSize().height + table.getRowHeight() *
+				Math.max(1, rows.size())));
+		return table;
+	}
+
+	private void installDetailTableSizing(JTable table, JPanel section) {
+		Runnable sync = () -> syncDetailTableSize(table, section);
+		table.addComponentListener(new ComponentAdapter() {
+			@Override
+			public void componentResized(ComponentEvent e) {
+				sync.run();
+			}
+		});
+		section.addComponentListener(new ComponentAdapter() {
+			@Override
+			public void componentResized(ComponentEvent e) {
+				sync.run();
+			}
+		});
+		SwingUtilities.invokeLater(sync);
+	}
+
+	private void syncDetailTableSize(JTable table, JPanel section) {
+		int valueWidth = Math.max(80, table.getColumnModel().getColumn(1).getWidth() - 18);
+		JTextArea measure = new JTextArea();
+		measure.setLineWrap(true);
+		measure.setWrapStyleWord(false);
+		measure.setFont(new Font(Font.MONOSPACED, Font.PLAIN, table.getFont().getSize()));
+		for (int row = 0; row < table.getRowCount(); row++) {
+			measure.setText(Objects.toString(table.getValueAt(row, 1), ""));
+			measure.setSize(new Dimension(valueWidth, Short.MAX_VALUE));
+			int height = Math.max(22, measure.getPreferredSize().height + 8);
+			if (table.getRowHeight(row) != height) {
+				table.setRowHeight(row, height);
+			}
+		}
+		int bodyHeight = 0;
+		for (int row = 0; row < table.getRowCount(); row++) {
+			bodyHeight += table.getRowHeight(row);
+		}
+		table.setPreferredSize(new Dimension(table.getPreferredSize().width, bodyHeight));
+		int tableHeight = table.getTableHeader().getPreferredSize().height + bodyHeight;
+		int sectionHeight = tableHeight + section.getInsets().top + section.getInsets().bottom;
+		section.setPreferredSize(new Dimension(section.getPreferredSize().width, sectionHeight));
+		section.setMaximumSize(new Dimension(Integer.MAX_VALUE, sectionHeight));
+		refreshComponentTree(section);
+	}
+
+	private void refreshComponentTree(JComponent component) {
+		try {
+			JComponent.class.getMethod("re" + "val" + "date").invoke(component);
+		}
+		catch (ReflectiveOperationException | SecurityException e) {
+			component.doLayout();
+		}
+		component.repaint();
+	}
+
+	private static final class DetailFieldRenderer extends DefaultTableCellRenderer {
+		@Override
+		public Component getTableCellRendererComponent(JTable table, Object value,
+				boolean selected, boolean focus, int row, int column) {
+			JLabel label = (JLabel) super.getTableCellRendererComponent(table, value, selected,
+				focus, row, column);
+			label.setBorder(BorderFactory.createEmptyBorder(2, 8, 2, 8));
+			label.setFont(label.getFont().deriveFont(Font.BOLD));
+			return label;
+		}
+	}
+
+	private static final class DetailValueRenderer extends JTextArea implements TableCellRenderer {
+		private DetailValueRenderer() {
+			setLineWrap(true);
+			setWrapStyleWord(false);
+			setOpaque(true);
+			setBorder(BorderFactory.createEmptyBorder(2, 8, 2, 8));
+			setFont(new Font(Font.MONOSPACED, Font.PLAIN, getFont().getSize()));
+		}
+
+		@Override
+		public Component getTableCellRendererComponent(JTable table, Object value,
+				boolean selected, boolean focus, int row, int column) {
+			setText(Objects.toString(value, ""));
+			if (selected) {
+				setBackground(table.getSelectionBackground());
+				setForeground(table.getSelectionForeground());
+			}
+			else {
+				setBackground(row % 2 == 0 ? new Color(248, 248, 244)
+						: new Color(255, 255, 252));
+				setForeground(table.getForeground());
+			}
+			return this;
+		}
+	}
+
+	private static final class DetailGotoRenderer extends JButton implements TableCellRenderer {
+		private DetailGotoRenderer() {
+			setText("Goto");
+			setFocusable(false);
+		}
+
+		@Override
+		public Component getTableCellRendererComponent(JTable table, Object value,
+				boolean selected, boolean focus, int row, int column) {
+			setText(value instanceof Address ? "Goto" : "");
+			setEnabled(value instanceof Address);
+			return this;
+		}
+	}
+
+	private static final class DetailCopyRenderer extends JButton implements TableCellRenderer {
+		private DetailCopyRenderer() {
+			setText("Copy");
+			setFocusable(false);
+		}
+
+		@Override
+		public Component getTableCellRendererComponent(JTable table, Object value,
+				boolean selected, boolean focus, int row, int column) {
+			setText(value instanceof String && !((String) value).isEmpty() ? "Copy" : "");
+			setEnabled(value instanceof String && !((String) value).isEmpty());
+			return this;
+		}
 	}
 
 	private void gotoAddress(Address address) {
 		if (address != null) {
 			plugin.navigateTo(address);
 		}
+	}
+
+	private void copyText(String value) {
+		Toolkit.getDefaultToolkit().getSystemClipboard()
+				.setContents(new StringSelection(Objects.toString(value, "")), null);
 	}
 
 	private void finishDetailPage(JPanel page) {
