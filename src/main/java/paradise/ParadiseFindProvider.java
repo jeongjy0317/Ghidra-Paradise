@@ -78,16 +78,20 @@ final class ParadiseFindProvider extends ComponentProvider {
 	private final DefaultTableModel overviewModel = model();
 	private final DefaultTableModel urlModel = model();
 	private final DefaultTableModel pathModel = model();
+	private final DefaultTableModel shellModel = model();
 	private final Map<JTable, List<TableColumn>> tableColumns = new LinkedHashMap<>();
 	private final JTable overviewTable = table(overviewModel);
 	private final JTable urlTable = table(urlModel);
 	private final JTable pathTable = table(pathModel);
+	private final JTable shellTable = table(shellModel);
 	private final JTextField overviewFilter = new JTextField(18);
 	private final JTextField urlFilter = new JTextField(18);
 	private final JTextField pathFilter = new JTextField(18);
+	private final JTextField shellFilter = new JTextField(18);
 	private List<ParadiseFindScanner.Row> overviewRows = List.of();
 	private List<ParadiseFindScanner.Row> urlRows = List.of();
 	private List<ParadiseFindScanner.Row> pathRows = List.of();
+	private List<ParadiseFindScanner.Row> shellRows = List.of();
 	private Program lastProgram;
 	private Function lastFunction;
 	private boolean lastWholeProgram;
@@ -122,6 +126,7 @@ final class ParadiseFindProvider extends ComponentProvider {
 		applyColumnOptions(overviewTable);
 		applyColumnOptions(urlTable);
 		applyColumnOptions(pathTable);
+		applyColumnOptions(shellTable);
 	}
 
 	boolean hasScan() {
@@ -203,10 +208,13 @@ final class ParadiseFindProvider extends ComponentProvider {
 	private void showRows(List<ParadiseFindScanner.Row> rows, String status) {
 		overviewRows = List.copyOf(rows);
 		urlRows = rows.stream().filter(row -> row.kind().equals("URL")).toList();
-		pathRows = rows.stream().filter(row -> !row.kind().equals("URL")).toList();
+		shellRows = rows.stream().filter(row -> row.kind().equals("Shell")).toList();
+		pathRows = rows.stream().filter(row -> !row.kind().equals("URL") &&
+			!row.kind().equals("Shell")).toList();
 		fill(overviewModel, overviewRows);
 		fill(urlModel, urlRows);
 		fill(pathModel, pathRows);
+		fill(shellModel, shellRows);
 		statusLabel.setText(status);
 		contextChanged();
 	}
@@ -219,6 +227,7 @@ final class ParadiseFindProvider extends ComponentProvider {
 		tabs.addTab("Overview", filteredTablePanel(overviewTable, overviewFilter));
 		tabs.addTab("URLs", filteredTablePanel(urlTable, urlFilter));
 		tabs.addTab("Paths", filteredTablePanel(pathTable, pathFilter));
+		tabs.addTab("Shell", filteredTablePanel(shellTable, shellFilter));
 		panel.add(header, BorderLayout.NORTH);
 		panel.add(tabs, BorderLayout.CENTER);
 		panel.add(statusLabel, BorderLayout.SOUTH);
@@ -304,6 +313,7 @@ final class ParadiseFindProvider extends ComponentProvider {
 		installTableNavigation(overviewTable);
 		installTableNavigation(urlTable);
 		installTableNavigation(pathTable);
+		installTableNavigation(shellTable);
 	}
 
 	private void installTableNavigation(JTable table) {
@@ -371,6 +381,7 @@ final class ParadiseFindProvider extends ComponentProvider {
 		return switch (tabs.getSelectedIndex()) {
 			case 1 -> urlTable;
 			case 2 -> pathTable;
+			case 3 -> shellTable;
 			default -> overviewTable;
 		};
 	}
@@ -379,6 +390,7 @@ final class ParadiseFindProvider extends ComponentProvider {
 		return switch (tabs.getSelectedIndex()) {
 			case 1 -> urlRows;
 			case 2 -> pathRows;
+			case 3 -> shellRows;
 			default -> overviewRows;
 		};
 	}

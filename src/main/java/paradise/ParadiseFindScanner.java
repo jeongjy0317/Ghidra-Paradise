@@ -50,6 +50,19 @@ final class ParadiseFindScanner {
 		"(?:/[^\\s\"'<>]+)+");
 	private static final Pattern RELATIVE_PATH = Pattern.compile(
 		"(?<![A-Za-z0-9_])\\.\\.?/[^\\s\"'<>]+(?:/[^\\s\"'<>]+)*");
+	private static final Pattern SHELL_LAUNCHER = Pattern.compile(
+		"(?i)(?<![A-Za-z0-9_./-])(?:powershell(?:\\.exe)?|pwsh(?:\\.exe)?|" +
+		"cmd(?:\\.exe)?|bash|sh|zsh|ksh|fish)\\s+(?:-[A-Za-z][A-Za-z0-9-]*|/[ck])" +
+		"\\b[^\\r\\n\\x00]{0,240}");
+	private static final Pattern UNIX_COMMAND_WITH_FLAG = Pattern.compile(
+		"(?i)(?<![A-Za-z0-9_./-])(?:ls|cat|chmod|chown|cp|mv|rm|mkdir|rmdir|tar|" +
+		"gzip|gunzip|curl|wget|ssh|scp|nc|ncat|netcat|python3?|perl|ruby|php|" +
+		"openssl|crontab|systemctl|service|grep|awk|sed|uname|whoami|ifconfig|" +
+		"netstat|ss|ps)\\s+-{1,2}[A-Za-z0-9][^\\r\\n\\x00]{0,180}");
+	private static final Pattern WINDOWS_COMMAND_WITH_FLAG = Pattern.compile(
+		"(?i)(?<![A-Za-z0-9_./-])(?:certutil|bitsadmin|reg|schtasks|wmic|rundll32|" +
+		"mshta|curl|wget|net|sc|taskkill)(?:\\.exe)?\\s+(?:-|/)[A-Za-z0-9]" +
+		"[^\\r\\n\\x00]{0,180}");
 
 	private ParadiseFindScanner() {
 	}
@@ -205,6 +218,7 @@ final class ParadiseFindScanner {
 			for (ScanText text : scanTexts(source)) {
 				addUrlRows(rows, source, text, mergeRepeated);
 				addPathRows(rows, source, text, mergeRepeated);
+				addShellRows(rows, source, text, mergeRepeated);
 			}
 		}
 		List<Row> sorted = new ArrayList<>(rows.values());
@@ -257,6 +271,15 @@ final class ParadiseFindScanner {
 			mergeRepeated);
 	}
 
+	private static void addShellRows(Map<String, Row> rows, TextSource source, ScanText text,
+			boolean mergeRepeated) {
+		addShellMatches(rows, source, text, SHELL_LAUNCHER, "shell launcher", mergeRepeated);
+		addShellMatches(rows, source, text, UNIX_COMMAND_WITH_FLAG, "Unix command",
+			mergeRepeated);
+		addShellMatches(rows, source, text, WINDOWS_COMMAND_WITH_FLAG, "Windows command",
+			mergeRepeated);
+	}
+
 	private static void addMatches(Map<String, Row> rows, TextSource source, ScanText text,
 			String scanValue, Pattern pattern, String kind, String reason, boolean url,
 			boolean mergeRepeated) {
@@ -278,6 +301,19 @@ final class ParadiseFindScanner {
 			String value = trimMatch(matcher.group());
 			addRow(rows, source, text, kind, value, evidence(text, reason),
 				priority(text, value, false), mergeRepeated);
+		}
+	}
+
+	private static void addShellMatches(Map<String, Row> rows, TextSource source, ScanText text,
+			Pattern pattern, String reason, boolean mergeRepeated) {
+		Matcher matcher = pattern.matcher(text.value());
+		while (matcher.find()) {
+			String value = trimMatch(matcher.group());
+			if (!shellHasSignal(value)) {
+				continue;
+			}
+			addRow(rows, source, text, "Shell", value, evidence(text, reason),
+				shellPriority(text, value), mergeRepeated);
 		}
 	}
 
@@ -350,6 +386,29 @@ final class ParadiseFindScanner {
 			score--;
 		}
 		return Math.max(1, score);
+	}
+
+	private static int shellPriority(ScanText text, String value) {
+		int score = 2;
+		String lower = value.toLowerCase(Locale.ROOT);
+		if (!text.chain().isBlank()) {
+			score--;
+		}
+		if (lower.contains("-encodedcommand") || lower.contains(" -enc") ||
+			lower.contains(" -nop") || lower.contains(" -command") ||
+			lower.contains(" /c") || lower.contains(" -c ") || lower.contains(" -rf") ||
+			lower.contains("http://") || lower.contains("https://")) {
+			score--;
+		}
+		return Math.max(1, score);
+	}
+
+	private static boolean shellHasSignal(String value) {
+		String lower = value.toLowerCase(Locale.ROOT);
+		return lower.contains(" -") || lower.contains(" /") || lower.contains(" /c") ||
+			lower.contains(" -c ") || lower.contains("-command") ||
+			lower.contains("-encodedcommand") || lower.contains("|") || lower.contains("&&") ||
+			lower.contains(";");
 	}
 
 	private static String trimMatch(String value) {
