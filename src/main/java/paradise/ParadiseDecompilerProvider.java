@@ -89,8 +89,8 @@ final class ParadiseDecompilerProvider extends ComponentProvider {
 	private final DefaultTableModel callsModel =
 		model("Direction", "Address", "Function", "Type", "Preview");
 	private final DefaultTableModel stringsModel = model("Use", "String", "Preview");
-	private final DefaultTableModel base64StringsModel =
-		model("Use", "String", "Decoded", "Double", "Kind");
+	private final DefaultTableModel encodedStringsModel =
+		model("Use", "String", "Encoding", "Chain", "Decoded", "Kind", "Confidence");
 	private final DefaultTableModel cleanupsModel = model("Kind", "Cleanup", "Effect");
 	private final DefaultTableModel diffModel = model("Line", "Raw Ghidra", "Paradise Clean C");
 	private final DefaultTableModel draftsModel = model("Kind", "Target", "Suggestion");
@@ -104,7 +104,7 @@ final class ParadiseDecompilerProvider extends ComponentProvider {
 	private final JTable localsTable = table(localsModel);
 	private final JTable callsTable = table(callsModel);
 	private final JTable stringsTable = table(stringsModel);
-	private final JTable base64StringsTable = table(base64StringsModel);
+	private final JTable encodedStringsTable = table(encodedStringsModel);
 	private final JTable cleanupsTable = table(cleanupsModel);
 	private final JTable diffTable = table(diffModel);
 	private final JTable draftsTable = table(draftsModel);
@@ -116,7 +116,7 @@ final class ParadiseDecompilerProvider extends ComponentProvider {
 	private final JScrollPane tracePanel = new JScrollPane(traceTable);
 	private final JScrollPane callsPanel = new JScrollPane(callsTable);
 	private final JScrollPane stringsOverviewPanel = new JScrollPane(stringsTable);
-	private final JScrollPane base64StringsPanel = new JScrollPane(base64StringsTable);
+	private final JScrollPane encodedStringsPanel = new JScrollPane(encodedStringsTable);
 	private final JTabbedPane stringsPanel = createStringsPanel();
 	private final JScrollPane diffPanel = new JScrollPane(diffTable);
 	private final JScrollPane draftsPanel = new JScrollPane(draftsTable);
@@ -127,7 +127,7 @@ final class ParadiseDecompilerProvider extends ComponentProvider {
 	private List<ParadiseXrefRow> xrefRows = List.of();
 	private List<CallRow> callRows = List.of();
 	private List<StringRow> stringRows = List.of();
-	private List<Base64StringRow> base64StringRows = List.of();
+	private List<EncodedStringRow> encodedStringRows = List.of();
 	private List<SuggestionRow> suggestionRows = List.of();
 	private List<TriageRow> triageRows = List.of();
 	private List<TraceRow> traceRows = List.of();
@@ -140,8 +140,15 @@ final class ParadiseDecompilerProvider extends ComponentProvider {
 	private JMenuItem traceItem;
 	private JMenu convertLiteralMenu;
 	private JMenu decodeMenu;
+	private JMenuItem decodeAutoItem;
 	private JMenuItem decodeBase64Item;
 	private JMenuItem decodeDoubleBase64Item;
+	private JMenuItem decodeHexItem;
+	private JMenuItem decodeUrlItem;
+	private JMenuItem decodeBase32Item;
+	private JMenuItem decodeCEscapesItem;
+	private JMenuItem decodeUtf16LeItem;
+	private JMenuItem decodeUtf16BeItem;
 	private JMenuItem renameFromStringItem;
 	private JMenuItem wrapperRenameItem;
 	private JMenuItem highlightUsesItem;
@@ -682,7 +689,7 @@ final class ParadiseDecompilerProvider extends ComponentProvider {
 	private JTabbedPane createStringsPanel() {
 		JTabbedPane pane = new JTabbedPane();
 		pane.addTab("Overview", stringsOverviewPanel);
-		pane.addTab("Base64", base64StringsPanel);
+		pane.addTab("Encoded", encodedStringsPanel);
 		return pane;
 	}
 
@@ -821,10 +828,25 @@ final class ParadiseDecompilerProvider extends ComponentProvider {
 		convertLiteralMenu.addSeparator();
 		convertLiteralMenu.add(item("Reset", e -> resetSelectedLiteral()));
 		decodeMenu = new JMenu("Decode from...");
-		decodeBase64Item = item("Base64", e -> decodeSelectedBase64(false));
-		decodeDoubleBase64Item = item("Base64 twice", e -> decodeSelectedBase64(true));
+		decodeAutoItem = item("Auto", e -> decodeSelected(DecodeCodec.AUTO));
+		decodeBase64Item = item("Base64", e -> decodeSelected(DecodeCodec.BASE64));
+		decodeDoubleBase64Item = item("Base64 twice", e -> decodeSelected(DecodeCodec.BASE64_TWICE));
+		decodeHexItem = item("Hex", e -> decodeSelected(DecodeCodec.HEX));
+		decodeUrlItem = item("URL percent", e -> decodeSelected(DecodeCodec.URL));
+		decodeBase32Item = item("Base32", e -> decodeSelected(DecodeCodec.BASE32));
+		decodeCEscapesItem = item("C escapes", e -> decodeSelected(DecodeCodec.C_ESCAPES));
+		decodeUtf16LeItem = item("UTF-16LE", e -> decodeSelected(DecodeCodec.UTF16_LE));
+		decodeUtf16BeItem = item("UTF-16BE", e -> decodeSelected(DecodeCodec.UTF16_BE));
+		decodeMenu.add(decodeAutoItem);
+		decodeMenu.addSeparator();
 		decodeMenu.add(decodeBase64Item);
 		decodeMenu.add(decodeDoubleBase64Item);
+		decodeMenu.add(decodeHexItem);
+		decodeMenu.add(decodeUrlItem);
+		decodeMenu.add(decodeBase32Item);
+		decodeMenu.add(decodeCEscapesItem);
+		decodeMenu.add(decodeUtf16LeItem);
+		decodeMenu.add(decodeUtf16BeItem);
 		renameFromStringItem =
 			item("Rename Function From String", e -> plugin.renameFromSelectedString(selectedSpan()));
 		wrapperRenameItem =
@@ -1333,12 +1355,17 @@ final class ParadiseDecompilerProvider extends ComponentProvider {
 		traceItem.setEnabled(hasResult && traceableSelectedVariable(currentTab()) != null);
 		convertLiteralMenu.setEnabled(hasResult && literalValue(span) != null);
 		String decodeSource = hasResult ? selectedDecodeSource() : null;
-		DecodedBase64 decodedBase64 = decodeSource == null ? null
-				: decodedBase64Display(decodeSource, true);
-		boolean canDecodeBase64 = decodedBase64 != null;
-		decodeMenu.setEnabled(canDecodeBase64);
-		decodeBase64Item.setEnabled(canDecodeBase64);
-		decodeDoubleBase64Item.setEnabled(canDecodeBase64 && decodedBase64.doubleEncoded());
+		Set<DecodeCodec> codecs = decodeSource == null ? Set.of() : availableDecodeCodecs(decodeSource);
+		decodeMenu.setEnabled(!codecs.isEmpty());
+		decodeAutoItem.setEnabled(!codecs.isEmpty());
+		decodeBase64Item.setEnabled(codecs.contains(DecodeCodec.BASE64));
+		decodeDoubleBase64Item.setEnabled(codecs.contains(DecodeCodec.BASE64_TWICE));
+		decodeHexItem.setEnabled(codecs.contains(DecodeCodec.HEX));
+		decodeUrlItem.setEnabled(codecs.contains(DecodeCodec.URL));
+		decodeBase32Item.setEnabled(codecs.contains(DecodeCodec.BASE32));
+		decodeCEscapesItem.setEnabled(codecs.contains(DecodeCodec.C_ESCAPES));
+		decodeUtf16LeItem.setEnabled(codecs.contains(DecodeCodec.UTF16_LE));
+		decodeUtf16BeItem.setEnabled(codecs.contains(DecodeCodec.UTF16_BE));
 		renameFromStringItem.setEnabled(hasResult);
 		wrapperRenameItem.setEnabled(hasResult && currentFunction() != null);
 		highlightUsesItem.setEnabled(hasSpan);
@@ -1380,31 +1407,24 @@ final class ParadiseDecompilerProvider extends ComponentProvider {
 		selectToken(tab, span.token());
 	}
 
-	private void decodeSelectedBase64(boolean decodeNested) {
+	private void decodeSelected(DecodeCodec codec) {
 		String source = selectedDecodeSource();
-		DecodedBase64 decoded = decodedBase64Display(source, decodeNested);
-		if (source == null || decoded == null) {
-			Msg.showInfo(this, panel, "Decode from Base64",
-				"Select a Base64 string literal or Base64 text first.");
-			return;
-		}
-		if (decodeNested && !decoded.doubleEncoded()) {
-			Msg.showInfo(this, panel, "Decode from Base64",
-				"The selected value decodes once, but the decoded value is not another Base64 payload.");
+		List<DecodeResult> decoded = decodeResultsForSelection(source, codec);
+		if (source == null || decoded.isEmpty()) {
+			Msg.showInfo(this, panel, "Decode from",
+				"Select an encoded string literal or encoded text first.");
 			return;
 		}
 
-		JTextArea output = new JTextArea(decoded.preview(), 8, 72);
+		JTextArea output = new JTextArea(decodeDialogText(decoded), 10, 78);
 		output.setEditable(false);
 		output.setLineWrap(true);
 		output.setWrapStyleWord(true);
 		output.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 12));
 		JPanel content = new JPanel(new BorderLayout(0, 8));
-		String chain = decoded.doubleEncoded() ? "Base64 -> Base64 -> " : "Base64 -> ";
-		content.add(new JLabel(chain + decoded.kind()), BorderLayout.NORTH);
+		content.add(new JLabel(decodeDialogHeader(decoded)), BorderLayout.NORTH);
 		content.add(new JScrollPane(output), BorderLayout.CENTER);
-		JOptionPane.showMessageDialog(panel, content,
-			decodeNested ? "Decode from Base64 Twice" : "Decode from Base64",
+		JOptionPane.showMessageDialog(panel, content, "Decode from " + codec.displayName(),
 			JOptionPane.INFORMATION_MESSAGE);
 	}
 
@@ -1792,7 +1812,7 @@ final class ParadiseDecompilerProvider extends ComponentProvider {
 		styleTable(localsTable, dark);
 		styleTable(callsTable, dark);
 		styleTable(stringsTable, dark);
-		styleTable(base64StringsTable, dark);
+		styleTable(encodedStringsTable, dark);
 		styleTable(diffTable, dark);
 		styleTable(draftsTable, dark);
 		styleTable(suggestionsTable, dark);
@@ -1800,9 +1820,11 @@ final class ParadiseDecompilerProvider extends ComponentProvider {
 		styleTable(traceTable, dark);
 		styleTable(cleanupsTable, dark);
 		setColumnWidth(stringsTable, 0, 92);
-		setColumnWidth(base64StringsTable, 0, 92);
-		setColumnWidth(base64StringsTable, 3, 58);
-		setColumnWidth(base64StringsTable, 4, 70);
+		setColumnWidth(encodedStringsTable, 0, 92);
+		setColumnWidth(encodedStringsTable, 2, 82);
+		setColumnWidth(encodedStringsTable, 3, 150);
+		setColumnWidth(encodedStringsTable, 5, 64);
+		setColumnWidth(encodedStringsTable, 6, 78);
 		setColumnWidth(diffTable, 0, 52);
 		setColumnWidth(draftsTable, 0, 78);
 		setColumnWidth(draftsTable, 1, 118);
@@ -2007,7 +2029,7 @@ final class ParadiseDecompilerProvider extends ComponentProvider {
 		fill(localsModel);
 		fill(callsModel);
 		fill(stringsModel);
-		fill(base64StringsModel);
+		fill(encodedStringsModel);
 		fill(cleanupsModel);
 		fill(diffModel);
 		fill(draftsModel);
@@ -2018,7 +2040,7 @@ final class ParadiseDecompilerProvider extends ComponentProvider {
 		xrefRows = List.of();
 		callRows = List.of();
 		stringRows = List.of();
-		base64StringRows = List.of();
+		encodedStringRows = List.of();
 		suggestionRows = List.of();
 		triageRows = List.of();
 		traceRows = List.of();
@@ -2124,10 +2146,10 @@ final class ParadiseDecompilerProvider extends ComponentProvider {
 			stringsModel.addRow(new Object[] { row.useAddress(), row.stringAddress(),
 				preview(row.value(), 200) });
 		}
-		base64StringRows = base64StringRows(stringRows);
-		for (Base64StringRow row : base64StringRows) {
-			base64StringsModel.addRow(new Object[] { row.useAddress(), row.encodedPreview(),
-				row.decodedPreview(), row.doubleEncoded() ? "yes" : "no", row.kind() });
+		encodedStringRows = encodedStringRows(stringRows);
+		for (EncodedStringRow row : encodedStringRows) {
+			encodedStringsModel.addRow(new Object[] { row.useAddress(), row.encodedPreview(),
+				row.encoding(), row.chain(), row.decodedPreview(), row.kind(), row.confidence() });
 		}
 	}
 
@@ -3064,25 +3086,114 @@ final class ParadiseDecompilerProvider extends ComponentProvider {
 		rows.putIfAbsent(key, row);
 	}
 
-	private List<Base64StringRow> base64StringRows(List<StringRow> rows) {
-		List<Base64StringRow> candidates = new ArrayList<>();
+	private List<EncodedStringRow> encodedStringRows(List<StringRow> rows) {
+		List<EncodedStringRow> matches = new ArrayList<>();
 		Set<String> seen = new HashSet<>();
 		for (StringRow row : rows) {
-			Base64StringRow candidate = base64StringRow(row);
-			if (candidate == null) {
-				continue;
-			}
-			String key = Objects.toString(candidate.stringAddress(), "") + "\u0000" +
-				candidate.encoded();
-			if (seen.add(key)) {
-				candidates.add(candidate);
+			for (DecodeResult result : decodeResults(row.value(), true)) {
+				String key = Objects.toString(row.stringAddress(), "") + "\u0000" + row.value() +
+					"\u0000" + result.chain();
+				if (seen.add(key)) {
+					matches.add(new EncodedStringRow(row.useAddress(), row.stringAddress(),
+						preview(row.value(), 200), result.encoding(), result.chain(),
+						result.decodedPreview(), result.kind(), result.confidence()));
+				}
 			}
 		}
-		return candidates;
+		return matches;
 	}
 
-	private Base64StringRow base64StringRow(StringRow row) {
-		String encoded = base64Payload(row.value());
+	private List<DecodeResult> decodeResultsForSelection(String source, DecodeCodec codec) {
+		if (source == null || source.isBlank()) {
+			return List.of();
+		}
+		if (codec == DecodeCodec.AUTO) {
+			return decodeResults(source, true);
+		}
+		DecodeResult result = codec == DecodeCodec.BASE64_TWICE ? decodeBase64Twice(source)
+				: decodeDirectResult(source, codec);
+		return result == null ? List.of() : List.of(result);
+	}
+
+	private Set<DecodeCodec> availableDecodeCodecs(String source) {
+		EnumSet<DecodeCodec> codecs = EnumSet.noneOf(DecodeCodec.class);
+		for (DecodeCodec codec : DecodeCodec.directCodecs()) {
+			if (decodeStep(source, codec) != null) {
+				codecs.add(codec);
+			}
+		}
+		if (decodeBase64Twice(source) != null) {
+			codecs.add(DecodeCodec.BASE64_TWICE);
+		}
+		return codecs;
+	}
+
+	private List<DecodeResult> decodeResults(String source, boolean recursive) {
+		List<DecodeResult> results = new ArrayList<>();
+		expandDecode(source, List.of(), 0, recursive, results, new HashSet<>());
+		results.sort(Comparator.comparingInt(DecodeResult::confidence).reversed()
+				.thenComparingInt(DecodeResult::depth)
+				.thenComparing(DecodeResult::chain));
+		return results.size() <= 12 ? results : List.copyOf(results.subList(0, 12));
+	}
+
+	private void expandDecode(String source, List<DecodeCodec> chain, int depth, boolean recursive,
+			List<DecodeResult> results, Set<String> seen) {
+		if (source == null || source.isBlank() || depth >= 3) {
+			return;
+		}
+		for (DecodeCodec codec : DecodeCodec.directCodecs()) {
+			DecodeStep step = decodeStep(source, codec);
+			if (step == null) {
+				continue;
+			}
+			List<DecodeCodec> nextChain = appendCodec(chain, codec);
+			DecodeResult result = decodeResult(nextChain, step);
+			String key = result.chain() + "\u0000" + result.decodedDisplay();
+			if (seen.add(key)) {
+				results.add(result);
+			}
+			String nextSource = step.text() != null ? step.text() : asciiText(step.bytes());
+			if (recursive && nextSource != null && !nextSource.equals(source)) {
+				expandDecode(nextSource, nextChain, depth + 1, true, results, seen);
+			}
+		}
+	}
+
+	private DecodeResult decodeDirectResult(String source, DecodeCodec codec) {
+		DecodeStep step = decodeStep(source, codec);
+		return step == null ? null : decodeResult(List.of(codec), step);
+	}
+
+	private DecodeResult decodeBase64Twice(String source) {
+		DecodeStep first = decodeStep(source, DecodeCodec.BASE64);
+		String secondSource = first == null ? null
+				: first.text() != null ? first.text() : asciiText(first.bytes());
+		DecodeStep second = decodeStep(secondSource, DecodeCodec.BASE64);
+		if (second == null) {
+			return null;
+		}
+		return decodeResult(List.of(DecodeCodec.BASE64, DecodeCodec.BASE64), second);
+	}
+
+	private DecodeStep decodeStep(String source, DecodeCodec codec) {
+		if (source == null || source.isBlank()) {
+			return null;
+		}
+		return switch (codec) {
+			case BASE64 -> decodeBase64Step(source);
+			case HEX -> decodeHexStep(source);
+			case URL -> decodeUrlStep(source);
+			case BASE32 -> decodeBase32Step(source);
+			case C_ESCAPES -> decodeCEscapesStep(source);
+			case UTF16_LE -> decodeUtf16Step(source, true);
+			case UTF16_BE -> decodeUtf16Step(source, false);
+			case AUTO, BASE64_TWICE -> null;
+		};
+	}
+
+	private DecodeStep decodeBase64Step(String source) {
+		String encoded = base64Payload(source);
 		if (encoded == null) {
 			return null;
 		}
@@ -3090,19 +3201,109 @@ final class ParadiseDecompilerProvider extends ComponentProvider {
 		if (!isUsefulBase64Decode(encoded, decoded)) {
 			return null;
 		}
-		DecodedBase64 display = decodedBase64Display(decoded, true);
-		return new Base64StringRow(row.useAddress(), row.stringAddress(), encoded,
-			preview(encoded, 200), display.preview(), display.doubleEncoded(), display.kind());
+		return new DecodeStep(DecodeCodec.BASE64, decoded, asciiText(decoded),
+			mostlyText(decoded) ? 90 : 72);
 	}
 
-	private DecodedBase64 decodedBase64Display(String value, boolean decodeNested) {
-		String encoded = base64Payload(value);
-		if (encoded == null) {
+	private DecodeStep decodeHexStep(String source) {
+		byte[] decoded = hexBytes(source);
+		if (!isUsefulByteDecode(decoded)) {
 			return null;
 		}
-		byte[] decoded = decodeBase64(encoded);
-		return isUsefulBase64Decode(encoded, decoded) ? decodedBase64Display(decoded, decodeNested)
-				: null;
+		return new DecodeStep(DecodeCodec.HEX, decoded, asciiText(decoded),
+			mostlyText(decoded) ? 84 : 60);
+	}
+
+	private DecodeStep decodeUrlStep(String source) {
+		byte[] decoded = urlBytes(source);
+		if (!isUsefulByteDecode(decoded)) {
+			return null;
+		}
+		return new DecodeStep(DecodeCodec.URL, decoded, asciiText(decoded),
+			mostlyText(decoded) ? 82 : 58);
+	}
+
+	private DecodeStep decodeBase32Step(String source) {
+		String payload = base32Payload(source);
+		if (payload == null) {
+			return null;
+		}
+		byte[] decoded = decodeBase32(payload);
+		if (!isUsefulByteDecode(decoded)) {
+			return null;
+		}
+		return new DecodeStep(DecodeCodec.BASE32, decoded, asciiText(decoded),
+			mostlyText(decoded) ? 82 : 58);
+	}
+
+	private DecodeStep decodeCEscapesStep(String source) {
+		byte[] decoded = cEscapeBytes(source);
+		if (!isUsefulByteDecode(decoded)) {
+			return null;
+		}
+		return new DecodeStep(DecodeCodec.C_ESCAPES, decoded, asciiText(decoded),
+			mostlyText(decoded) ? 80 : 55);
+	}
+
+	private DecodeStep decodeUtf16Step(String source, boolean littleEndian) {
+		byte[] bytes = byteLikeBytes(source);
+		if (bytes == null || bytes.length < 4 || (bytes.length & 1) != 0) {
+			return null;
+		}
+		String text = new String(bytes,
+			littleEndian ? java.nio.charset.StandardCharsets.UTF_16LE
+					: java.nio.charset.StandardCharsets.UTF_16BE);
+		if (!usefulDecodedText(text)) {
+			return null;
+		}
+		byte[] textBytes = text.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+		return new DecodeStep(littleEndian ? DecodeCodec.UTF16_LE : DecodeCodec.UTF16_BE,
+			textBytes, text, 78);
+	}
+
+	private DecodeResult decodeResult(List<DecodeCodec> chain, DecodeStep step) {
+		String display = step.text() != null ? step.text()
+				: mostlyText(step.bytes()) ? decodedTextPreview(step.bytes()) : decodedHexPreview(step.bytes());
+		String kind = step.text() != null || mostlyText(step.bytes()) ? textKind(display) : "binary";
+		int chainPenalty = Math.max(0, chain.size() - 1) * 3;
+		int confidence = Math.max(1, step.confidence() - chainPenalty);
+		return new DecodeResult(chain.get(0).displayName(), chainDisplay(chain), display,
+			preview(display, 200), kind, chain.size(), confidence);
+	}
+
+	private List<DecodeCodec> appendCodec(List<DecodeCodec> chain, DecodeCodec codec) {
+		List<DecodeCodec> next = new ArrayList<>(chain);
+		next.add(codec);
+		return List.copyOf(next);
+	}
+
+	private String chainDisplay(List<DecodeCodec> chain) {
+		return chain.stream().map(DecodeCodec::displayName).reduce((a, b) -> a + " -> " + b)
+				.orElse("");
+	}
+
+	private String decodeDialogHeader(List<DecodeResult> results) {
+		if (results.size() == 1) {
+			DecodeResult result = results.get(0);
+			return result.chain() + " -> " + result.kind() + " (" + result.confidence() + "%)";
+		}
+		return results.size() + " decode matches";
+	}
+
+	private String decodeDialogText(List<DecodeResult> results) {
+		if (results.size() == 1) {
+			return results.get(0).decodedDisplay();
+		}
+		StringBuilder builder = new StringBuilder();
+		for (DecodeResult result : results) {
+			if (builder.length() > 0) {
+				builder.append(System.lineSeparator()).append(System.lineSeparator());
+			}
+			builder.append('[').append(result.confidence()).append("%] ")
+				.append(result.chain()).append(" -> ").append(result.kind())
+				.append(System.lineSeparator()).append(result.decodedPreview());
+		}
+		return builder.toString();
 	}
 
 	private boolean isUsefulBase64Decode(String encoded, byte[] decoded) {
@@ -3110,8 +3311,12 @@ final class ParadiseDecompilerProvider extends ComponentProvider {
 			return false;
 		}
 		boolean text = mostlyText(decoded);
-		boolean padded = encoded.indexOf('=') >= 0;
-		return padded || encoded.length() >= 16 || text;
+		boolean padded = encoded != null && encoded.indexOf('=') >= 0;
+		return padded || (encoded != null && encoded.length() >= 16) || text;
+	}
+
+	private boolean isUsefulByteDecode(byte[] decoded) {
+		return decoded != null && (mostlyText(decoded) || decoded.length >= 4);
 	}
 
 	private String base64Payload(String value) {
@@ -3154,6 +3359,237 @@ final class ParadiseDecompilerProvider extends ComponentProvider {
 		catch (IllegalArgumentException e) {
 			return null;
 		}
+	}
+
+	private byte[] hexBytes(String source) {
+		if (source == null) {
+			return null;
+		}
+		Matcher escaped = Pattern.compile("\\\\x([0-9A-Fa-f]{2})").matcher(source);
+		java.io.ByteArrayOutputStream escapedOut = new java.io.ByteArrayOutputStream();
+		while (escaped.find()) {
+			escapedOut.write(Integer.parseInt(escaped.group(1), 16));
+		}
+		if (escapedOut.size() > 0) {
+			return escapedOut.toByteArray();
+		}
+
+		String compact = source.trim().replaceAll("(?i)0x", "")
+				.replaceAll("[\\s,;:_-]+", "");
+		if (!compact.matches("[0-9A-Fa-f]+")) {
+			return null;
+		}
+		if (compact.length() < 4 || (compact.length() & 1) != 0) {
+			return null;
+		}
+		byte[] out = new byte[compact.length() / 2];
+		for (int i = 0; i < out.length; i++) {
+			out[i] = (byte) Integer.parseInt(compact.substring(i * 2, i * 2 + 2), 16);
+		}
+		return out;
+	}
+
+	private byte[] urlBytes(String source) {
+		if (source == null || !Pattern.compile("%[0-9A-Fa-f]{2}").matcher(source).find()) {
+			return null;
+		}
+		java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
+		boolean changed = false;
+		for (int i = 0; i < source.length(); i++) {
+			char c = source.charAt(i);
+			if (c == '%' && i + 2 < source.length()) {
+				int hi = hexNibble(source.charAt(i + 1));
+				int lo = hexNibble(source.charAt(i + 2));
+				if (hi >= 0 && lo >= 0) {
+					out.write((hi << 4) | lo);
+					i += 2;
+					changed = true;
+					continue;
+				}
+			}
+			out.write(c == '+' ? ' ' : (byte) c);
+		}
+		return changed ? out.toByteArray() : null;
+	}
+
+	private String base32Payload(String source) {
+		if (source == null) {
+			return null;
+		}
+		String compact = source.trim().replaceAll("[\\s-]+", "").toUpperCase(Locale.ROOT);
+		if (compact.length() < 8 || !compact.matches("[A-Z2-7=]+")) {
+			return null;
+		}
+		int firstPadding = compact.indexOf('=');
+		if (firstPadding >= 0 && !compact.substring(firstPadding).matches("=+")) {
+			return null;
+		}
+		if (firstPadding < 0 && compact.length() < 16) {
+			return null;
+		}
+		return compact;
+	}
+
+	private byte[] decodeBase32(String payload) {
+		java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
+		int buffer = 0;
+		int bits = 0;
+		for (int i = 0; i < payload.length(); i++) {
+			char c = payload.charAt(i);
+			if (c == '=') {
+				break;
+			}
+			int value;
+			if (c >= 'A' && c <= 'Z') {
+				value = c - 'A';
+			}
+			else if (c >= '2' && c <= '7') {
+				value = c - '2' + 26;
+			}
+			else {
+				return null;
+			}
+			buffer = (buffer << 5) | value;
+			bits += 5;
+			if (bits >= 8) {
+				out.write((buffer >> (bits - 8)) & 0xff);
+				bits -= 8;
+			}
+		}
+		return out.toByteArray();
+	}
+
+	private byte[] cEscapeBytes(String source) {
+		if (source == null || source.indexOf('\\') < 0) {
+			return null;
+		}
+		java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
+		boolean changed = false;
+		for (int i = 0; i < source.length(); i++) {
+			char c = source.charAt(i);
+			if (c != '\\' || i + 1 >= source.length()) {
+				out.write((byte) c);
+				continue;
+			}
+			char escaped = source.charAt(++i);
+			changed = true;
+			switch (escaped) {
+				case 'n' -> out.write('\n');
+				case 'r' -> out.write('\r');
+				case 't' -> out.write('\t');
+				case '\\' -> out.write('\\');
+				case '"' -> out.write('"');
+				case '\'' -> out.write('\'');
+				case 'x' -> {
+					int value = 0;
+					int digits = 0;
+					while (i + 1 < source.length() && digits < 2) {
+						int nibble = hexNibble(source.charAt(i + 1));
+						if (nibble < 0) {
+							break;
+						}
+						value = (value << 4) | nibble;
+						i++;
+						digits++;
+					}
+					if (digits == 0) {
+						out.write('x');
+					}
+					else {
+						out.write(value);
+					}
+				}
+				case 'u' -> {
+					if (i + 4 < source.length()) {
+						String hex = source.substring(i + 1, i + 5);
+						if (hex.matches("[0-9A-Fa-f]{4}")) {
+							String text = String.valueOf((char) Integer.parseInt(hex, 16));
+							out.writeBytes(text.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+							i += 4;
+						}
+						else {
+							out.write('u');
+						}
+					}
+					else {
+						out.write('u');
+					}
+				}
+				default -> {
+					if (escaped >= '0' && escaped <= '7') {
+						int value = escaped - '0';
+						int digits = 1;
+						while (i + 1 < source.length() && digits < 3) {
+							char next = source.charAt(i + 1);
+							if (next < '0' || next > '7') {
+								break;
+							}
+							value = (value << 3) | (next - '0');
+							i++;
+							digits++;
+						}
+						out.write(value & 0xff);
+					}
+					else {
+						out.write((byte) escaped);
+					}
+				}
+			}
+		}
+		return changed ? out.toByteArray() : null;
+	}
+
+	private byte[] byteLikeBytes(String source) {
+		byte[] hex = hexBytes(source);
+		if (hex != null) {
+			return hex;
+		}
+		if (source == null || source.indexOf('\0') < 0) {
+			return null;
+		}
+		byte[] bytes = new byte[source.length()];
+		for (int i = 0; i < source.length(); i++) {
+			bytes[i] = (byte) source.charAt(i);
+		}
+		return bytes;
+	}
+
+	private int hexNibble(char c) {
+		if (c >= '0' && c <= '9') {
+			return c - '0';
+		}
+		if (c >= 'a' && c <= 'f') {
+			return c - 'a' + 10;
+		}
+		if (c >= 'A' && c <= 'F') {
+			return c - 'A' + 10;
+		}
+		return -1;
+	}
+
+	private boolean usefulDecodedText(String text) {
+		if (text == null || text.length() < 2 || text.indexOf('\ufffd') >= 0) {
+			return false;
+		}
+		int useful = 0;
+		for (int i = 0; i < text.length(); i++) {
+			char c = text.charAt(i);
+			if (!Character.isISOControl(c) || Character.isWhitespace(c)) {
+				useful++;
+			}
+		}
+		return useful >= Math.ceil(text.length() * 0.75);
+	}
+
+	private String textKind(String text) {
+		String lower = text == null ? "" : text.toLowerCase(Locale.ROOT);
+		if (lower.startsWith("http://") || lower.startsWith("https://")) {
+			return "url";
+		}
+		if (lower.matches("^[a-z]:\\\\.*") || lower.startsWith("/") || lower.startsWith("\\\\")) {
+			return "path";
+		}
+		return "text";
 	}
 
 	private boolean mostlyText(byte[] bytes) {
@@ -3200,23 +3636,6 @@ final class ParadiseDecompilerProvider extends ComponentProvider {
 		return builder.toString();
 	}
 
-	private DecodedBase64 decodedBase64Display(byte[] decoded, boolean decodeNested) {
-		String decodedAscii = asciiText(decoded);
-		if (decodeNested) {
-			String nestedPayload = decodedAscii == null ? null : base64Payload(decodedAscii);
-			byte[] nestedDecoded = nestedPayload == null ? null : decodeBase64(nestedPayload);
-			if (isUsefulBase64Decode(nestedPayload, nestedDecoded)) {
-				boolean nestedText = mostlyText(nestedDecoded);
-				return new DecodedBase64(
-					nestedText ? decodedTextPreview(nestedDecoded) : decodedHexPreview(nestedDecoded),
-					nestedText ? "text" : "binary", true);
-			}
-		}
-		boolean text = mostlyText(decoded);
-		return new DecodedBase64(text ? decodedTextPreview(decoded) : decodedHexPreview(decoded),
-			text ? "text" : "binary", false);
-	}
-
 	private String asciiText(byte[] bytes) {
 		StringBuilder builder = new StringBuilder();
 		for (byte b : bytes) {
@@ -3249,10 +3668,70 @@ final class ParadiseDecompilerProvider extends ComponentProvider {
 				case 'n' -> builder.append('\n');
 				case 'r' -> builder.append('\r');
 				case 't' -> builder.append('\t');
-				case '0' -> builder.append('\0');
+				case '0' -> {
+					int value = 0;
+					int digits = 1;
+					while (i + 1 < text.length() - 1 && digits < 3) {
+						char next = text.charAt(i + 1);
+						if (next < '0' || next > '7') {
+							break;
+						}
+						value = (value << 3) | (next - '0');
+						i++;
+						digits++;
+					}
+					builder.append((char) value);
+				}
 				case '\\' -> builder.append('\\');
 				case '"' -> builder.append('"');
-				default -> builder.append(escaped);
+				case 'x' -> {
+					int value = 0;
+					int digits = 0;
+					while (i + 1 < text.length() - 1 && digits < 2) {
+						int nibble = hexNibble(text.charAt(i + 1));
+						if (nibble < 0) {
+							break;
+						}
+						value = (value << 4) | nibble;
+						i++;
+						digits++;
+					}
+					builder.append(digits == 0 ? 'x' : (char) value);
+				}
+				case 'u' -> {
+					if (i + 4 < text.length() - 1) {
+						String hex = text.substring(i + 1, i + 5);
+						if (hex.matches("[0-9A-Fa-f]{4}")) {
+							builder.append((char) Integer.parseInt(hex, 16));
+							i += 4;
+						}
+						else {
+							builder.append('u');
+						}
+					}
+					else {
+						builder.append('u');
+					}
+				}
+				default -> {
+					if (escaped >= '1' && escaped <= '7') {
+						int value = escaped - '0';
+						int digits = 1;
+						while (i + 1 < text.length() - 1 && digits < 3) {
+							char next = text.charAt(i + 1);
+							if (next < '0' || next > '7') {
+								break;
+							}
+							value = (value << 3) | (next - '0');
+							i++;
+							digits++;
+						}
+						builder.append((char) value);
+					}
+					else {
+						builder.append(escaped);
+					}
+				}
 			}
 		}
 		return builder.toString();
@@ -3329,10 +3808,10 @@ final class ParadiseDecompilerProvider extends ComponentProvider {
 				plugin.navigateTo(stringRows.get(row).stringAddress());
 			}
 		}));
-		base64StringsTable.addMouseListener(tableDoubleClick(() -> {
-			int row = selectedModelRow(base64StringsTable);
-			if (row >= 0 && row < base64StringRows.size()) {
-				plugin.navigateTo(base64StringRows.get(row).stringAddress());
+		encodedStringsTable.addMouseListener(tableDoubleClick(() -> {
+			int row = selectedModelRow(encodedStringsTable);
+			if (row >= 0 && row < encodedStringRows.size()) {
+				plugin.navigateTo(encodedStringRows.get(row).stringAddress());
 			}
 		}));
 		triageTable.addMouseListener(tableDoubleClick(() -> {
@@ -3912,6 +4391,35 @@ final class ParadiseDecompilerProvider extends ComponentProvider {
 		CHARACTER
 	}
 
+	private enum DecodeCodec {
+		AUTO("Auto"),
+		BASE64("Base64"),
+		BASE64_TWICE("Base64 twice"),
+		HEX("Hex"),
+		URL("URL percent"),
+		BASE32("Base32"),
+		C_ESCAPES("C escapes"),
+		UTF16_LE("UTF-16LE"),
+		UTF16_BE("UTF-16BE");
+
+		private static final List<DecodeCodec> DIRECT_CODECS =
+			List.of(BASE64, HEX, URL, BASE32, C_ESCAPES, UTF16_LE, UTF16_BE);
+
+		private final String displayName;
+
+		DecodeCodec(String displayName) {
+			this.displayName = displayName;
+		}
+
+		private String displayName() {
+			return displayName;
+		}
+
+		private static List<DecodeCodec> directCodecs() {
+			return DIRECT_CODECS;
+		}
+	}
+
 	private enum ToolbarGlyph {
 		DISASM,
 		GRAPH,
@@ -3945,11 +4453,15 @@ final class ParadiseDecompilerProvider extends ComponentProvider {
 	private record StringRow(Address useAddress, Address stringAddress, String value) {
 	}
 
-	private record Base64StringRow(Address useAddress, Address stringAddress, String encoded,
-			String encodedPreview, String decodedPreview, boolean doubleEncoded, String kind) {
+	private record EncodedStringRow(Address useAddress, Address stringAddress, String encodedPreview,
+			String encoding, String chain, String decodedPreview, String kind, int confidence) {
 	}
 
-	private record DecodedBase64(String preview, String kind, boolean doubleEncoded) {
+	private record DecodeStep(DecodeCodec codec, byte[] bytes, String text, int confidence) {
+	}
+
+	private record DecodeResult(String encoding, String chain, String decodedDisplay,
+			String decodedPreview, String kind, int depth, int confidence) {
 	}
 
 	private record SuggestionRow(int priority, Address address, String finding, String evidence) {
