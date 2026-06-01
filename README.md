@@ -1,6 +1,6 @@
 # Ghidra's Paradise
 
-Paradise is a Ghidra extension that adds an IDA-like pseudocode and graph workflow on top of Ghidra's native decompiler. It is built for fast reverse-engineering review: cleaner C-like output, function tabs, diagram navigation, xrefs, strings, local variables, cleanup reporting, triage hints, and export tools live in one dockable workflow.
+Paradise is a Ghidra extension that adds an IDA-like pseudocode and graph workflow on top of Ghidra's native decompiler. It is built for fast reverse-engineering review: cleaner C-like output, function tabs, diagram navigation, xrefs, strings, encoded-string detection, local variables, cleanup reporting, triage hints, and export tools live in one dockable workflow.
 
 Paradise does not replace Ghidra's decompiler. It uses Ghidra as the source of truth and keeps cleanup transforms display/export-only unless you explicitly run an edit action such as rename, type, or comment.
 
@@ -23,17 +23,20 @@ Paradise does not replace Ghidra's decompiler. It uses Ghidra as the source of t
   - `Locals`
   - `Trace`
   - `Calls`
-  - `Strings`
+  - `Strings` with overview, per-encoding result tabs, filters, and usage navigation
   - `Diff`
   - `Drafts`
   - `Suggestions`
   - `Triage`
   - `Cleanups`
+- Encoded string detection for Base64, double Base64, hex, URL percent encoding, Base32, UTF-16LE, and UTF-16BE. Detected string tabs appear only when that encoding is present.
+- Pseudocode context-menu decoding via `Decode from...` with auto and explicit decode choices.
+- String-table context actions for `Goto usage` and `Goto string`.
 - Variable trace view that follows the current pseudocode line and shows static/symbolic value estimates where possible.
 - Suggestions and triage views for review targets such as suspicious XOR operations, call-heavy functions, string-heavy functions, and likely entry logic.
 - Cleanups view showing which cleanup rules affected the current pseudocode.
 - Export current function or all non-external functions as C-like pseudocode, with optional metadata JSON.
-- Tabbed settings dialog for general behavior, pseudocode display, visible analysis views, cleanup rules, export mode, and layout reset.
+- Redesigned settings dialog with a sidebar navigator, bold page headers, grouped controls, visible analysis tab selection, cleanup rules, export mode, and layout reset.
 
 ## Requirements
 
@@ -74,10 +77,12 @@ Open a program in CodeBrowser and use:
 - `Paradise > Pseudocode > Decompile` to open the current function in Paradise Pseudocode.
 - `Paradise > Diagram > Open Function Diagram` to open the current function graph.
 - `Paradise > Diagram > Open Binary Diagram` to open a binary-level overview.
-- `Paradise > Options > Settings` to configure display, cleanup, export, and visible analysis tabs.
+- `Paradise > Options > Settings` to configure display, navigation, cleanup, export, and visible analysis tabs.
 - `Paradise > Export > Export Current Function` or `Export All Functions` to write cleaned C-like output.
 
 Paradise also exposes provider-local toolbar buttons in the Pseudocode and Diagram windows. Hover a toolbar icon in Ghidra to see the action name.
+
+In the Pseudocode viewer, right-click selected text or a string literal and use `Decode from...` to decode common encodings. In the `Strings` analysis tab, Paradise shows `Overview` plus per-detected-type subtabs such as `Base64`, `Hex`, `URL`, `Base32`, `UTF-16LE`, and `UTF-16BE`. Each string table has a filter field, and row context menus can jump to the usage in pseudocode or to the string data address.
 
 ## Hotkeys
 
@@ -104,12 +109,14 @@ Hotkeys can be disabled from Paradise settings.
 
 Open `Paradise > Options > Settings`.
 
-- `General`: hotkeys, Listing sync, external-location follow, xref behavior.
-- `Pseudocode`: timeout, font size, gutter, line numbers, token addresses, current-line highlight, brace matching, new-tab callee behavior, use highlighting.
+The settings window uses a left sidebar instead of top tabs, so selected section labels stay readable across Ghidra themes. Each page has a bold header and grouped controls.
+
+- `General`: hotkeys, Listing sync, external-location follow, matching-token highlighting, callee/xref navigation behavior, detected-main opening, and decompiler timeout.
+- `Pseudocode`: theme preset, font size, gutter, line numbers, token addresses, current-line highlight, and brace matching.
 - `Views`: choose which bottom analysis tabs are visible.
-- `Cleanup`: enable or disable individual Clean C cleanup families.
+- `Cleanup`: enable or disable individual Clean C cleanup families, type aliases, and address comments.
 - `Export`: one combined C file or one file per function, plus optional metadata JSON.
-- `Layout`: reset Paradise layout defaults.
+- `Layout`: reset Paradise pane, tab, theme, and cleanup defaults.
 
 ## Cleanup Policy
 
