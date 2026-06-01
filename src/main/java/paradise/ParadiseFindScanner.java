@@ -54,17 +54,19 @@ final class ParadiseFindScanner {
 	private ParadiseFindScanner() {
 	}
 
-	static List<Row> scanFunction(Function function, TaskMonitor monitor) throws CancelledException {
+	static List<Row> scanFunction(Function function, boolean mergeRepeated, TaskMonitor monitor)
+			throws CancelledException {
 		if (function == null) {
 			return List.of();
 		}
 		Program program = function.getProgram();
 		monitor.setMessage("Scanning function strings");
 		List<TextSource> sources = textSourcesForBody(program, function.getBody(), monitor);
-		return scanSources(sources, monitor);
+		return scanSources(sources, mergeRepeated, monitor);
 	}
 
-	static List<Row> scanProgram(Program program, TaskMonitor monitor) throws CancelledException {
+	static List<Row> scanProgram(Program program, boolean mergeRepeated, TaskMonitor monitor)
+			throws CancelledException {
 		if (program == null) {
 			return List.of();
 		}
@@ -76,7 +78,7 @@ final class ParadiseFindScanner {
 		for (TextSource source : rawTextSources(program, monitor)) {
 			putSource(sources, source);
 		}
-		return scanSources(List.copyOf(sources.values()), monitor);
+		return scanSources(List.copyOf(sources.values()), mergeRepeated, monitor);
 	}
 
 	private static List<TextSource> textSourcesForBody(Program program, AddressSetView body,
@@ -193,16 +195,16 @@ final class ParadiseFindScanner {
 		sources.putIfAbsent(key, source);
 	}
 
-	private static List<Row> scanSources(List<TextSource> sources, TaskMonitor monitor)
-			throws CancelledException {
+	private static List<Row> scanSources(List<TextSource> sources, boolean mergeRepeated,
+			TaskMonitor monitor) throws CancelledException {
 		Map<String, Row> rows = new LinkedHashMap<>();
 		monitor.initialize(sources.size());
 		for (TextSource source : sources) {
 			monitor.checkCancelled();
 			monitor.incrementProgress(1);
 			for (ScanText text : scanTexts(source)) {
-				addUrlRows(rows, source, text);
-				addPathRows(rows, source, text);
+				addUrlRows(rows, source, text, mergeRepeated);
+				addPathRows(rows, source, text, mergeRepeated);
 			}
 		}
 		List<Row> sorted = new ArrayList<>(rows.values());
@@ -224,10 +226,13 @@ final class ParadiseFindScanner {
 		return texts;
 	}
 
-	private static void addUrlRows(Map<String, Row> rows, TextSource source, ScanText text) {
+	private static void addUrlRows(Map<String, Row> rows, TextSource source, ScanText text,
+			boolean mergeRepeated) {
 		String normalized = normalizeUrlText(text.value());
-		addMatches(rows, source, text, normalized, URL_WITH_SCHEME, "URL", "network scheme", true);
-		addMatches(rows, source, text, normalized, HOST_PORT_PATH, "URL", "IP host path", true);
+		addMatches(rows, source, text, normalized, URL_WITH_SCHEME, "URL", "network scheme", true,
+			mergeRepeated);
+		addMatches(rows, source, text, normalized, HOST_PORT_PATH, "URL", "IP host path", true,
+			mergeRepeated);
 		Matcher matcher = DOMAIN_WITH_CONTEXT.matcher(normalized);
 		while (matcher.find()) {
 			String value = trimMatch(matcher.group());
@@ -235,33 +240,36 @@ final class ParadiseFindScanner {
 				continue;
 			}
 			addRow(rows, source, text, "URL", value, evidence(text, "domain/path pattern"),
-				priority(text, value, true));
+				priority(text, value, true), mergeRepeated);
 		}
 	}
 
-	private static void addPathRows(Map<String, Row> rows, TextSource source, ScanText text) {
+	private static void addPathRows(Map<String, Row> rows, TextSource source, ScanText text,
+			boolean mergeRepeated) {
 		addMatches(rows, source, text, text.value(), WINDOWS_DRIVE_PATH, "Windows path",
-			"drive path", false);
+			"drive path", false, mergeRepeated);
 		addMatches(rows, source, text, text.value(), WINDOWS_UNC_PATH, "UNC path", "UNC path",
-			false);
+			false, mergeRepeated);
 		addMatches(rows, source, text, text.value(), WINDOWS_ENV_PATH, "Windows path",
-			"environment path", false);
-		addPathMatches(rows, source, text, UNIX_PATH, "Unix path", "absolute path");
-		addPathMatches(rows, source, text, RELATIVE_PATH, "Relative path", "relative path");
+			"environment path", false, mergeRepeated);
+		addPathMatches(rows, source, text, UNIX_PATH, "Unix path", "absolute path", mergeRepeated);
+		addPathMatches(rows, source, text, RELATIVE_PATH, "Relative path", "relative path",
+			mergeRepeated);
 	}
 
 	private static void addMatches(Map<String, Row> rows, TextSource source, ScanText text,
-			String scanValue, Pattern pattern, String kind, String reason, boolean url) {
+			String scanValue, Pattern pattern, String kind, String reason, boolean url,
+			boolean mergeRepeated) {
 		Matcher matcher = pattern.matcher(scanValue);
 		while (matcher.find()) {
 			String value = trimMatch(matcher.group());
 			addRow(rows, source, text, kind, value, evidence(text, reason),
-				priority(text, value, url));
+				priority(text, value, url), mergeRepeated);
 		}
 	}
 
 	private static void addPathMatches(Map<String, Row> rows, TextSource source, ScanText text,
-			Pattern pattern, String kind, String reason) {
+			Pattern pattern, String kind, String reason, boolean mergeRepeated) {
 		Matcher matcher = pattern.matcher(text.value());
 		while (matcher.find()) {
 			if (matcher.start() > 0 && text.value().charAt(matcher.start() - 1) == ':') {
@@ -269,24 +277,28 @@ final class ParadiseFindScanner {
 			}
 			String value = trimMatch(matcher.group());
 			addRow(rows, source, text, kind, value, evidence(text, reason),
-				priority(text, value, false));
+				priority(text, value, false), mergeRepeated);
 		}
 	}
 
 	private static void addRow(Map<String, Row> rows, TextSource source, ScanText text, String kind,
-			String value, String evidence, int priority) {
+			String value, String evidence, int priority, boolean mergeRepeated) {
 		if (value == null || value.length() < 3) {
 			return;
 		}
-		String key = kind + "\u0000" + value + "\u0000" + text.source() + "\u0000" +
-			text.chain();
+		String key = mergeRepeated ? kind + "\u0000" + value + "\u0000" + text.source() + "\u0000" +
+			text.chain()
+				: kind + "\u0000" + value + "\u0000" +
+					Objects.toString(source.textAddress(), "") + "\u0000" +
+					Objects.toString(source.useAddress(), "") + "\u0000" + text.source() +
+					"\u0000" + text.chain();
 		Row existing = rows.get(key);
 		if (existing == null) {
 			rows.put(key, new Row(priority, 1, kind, source.textAddress(), source.useAddress(),
 				text.source(), text.chain(), value, evidence));
 			return;
 		}
-		rows.put(key, existing.withOccurrence(priority));
+		rows.put(key, mergeRepeated ? existing.withOccurrence(priority) : existing);
 	}
 
 	private static String normalizeUrlText(String value) {

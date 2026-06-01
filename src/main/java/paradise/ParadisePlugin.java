@@ -90,6 +90,7 @@ public class ParadisePlugin extends ProgramPlugin {
 	private static final String OPTION_VIEW_TRIAGE = "Show Triage panel";
 	private static final String OPTION_VIEW_CLEANUPS = "Show Cleanups panel";
 	private static final String OPTION_VIEW_FINDS_WINDOW = "Show URL/path finds window";
+	private static final String OPTION_FIND_MERGE_REPEATED = "Merge repeated Finds rows";
 	private static final String OPTION_FIND_COLUMN_PRIORITY = "Show Finds Priority column";
 	private static final String OPTION_FIND_COLUMN_COUNT = "Show Finds Count column";
 	private static final String OPTION_FIND_COLUMN_KIND = "Show Finds Kind column";
@@ -147,6 +148,7 @@ public class ParadisePlugin extends ProgramPlugin {
 	private static final boolean DEFAULT_TYPE_ALIASES = false;
 	private static final boolean DEFAULT_ADDRESS_COMMENTS = false;
 	private static final boolean DEFAULT_EXPORT_METADATA = true;
+	private static final boolean DEFAULT_FIND_MERGE_REPEATED = true;
 
 	private final ParadiseDecompilerEngine engine = new ParadiseDecompilerEngine();
 	private final ParadiseDecompilerProvider provider;
@@ -303,6 +305,10 @@ public class ParadisePlugin extends ProgramPlugin {
 
 	boolean showFindsWindow() {
 		return options().getBoolean(OPTION_VIEW_FINDS_WINDOW, DEFAULT_SHOW_AUX_TAB);
+	}
+
+	boolean mergeRepeatedFinds() {
+		return options().getBoolean(OPTION_FIND_MERGE_REPEATED, DEFAULT_FIND_MERGE_REPEATED);
 	}
 
 	boolean showFindColumn(String title) {
@@ -1404,6 +1410,8 @@ public class ParadisePlugin extends ProgramPlugin {
 			"Show the Cleanups bottom panel tab.");
 		toolOptions.registerOption(OPTION_VIEW_FINDS_WINDOW, DEFAULT_SHOW_AUX_TAB, null,
 			"Show the Paradise URL/path finds dockable window.");
+		toolOptions.registerOption(OPTION_FIND_MERGE_REPEATED, DEFAULT_FIND_MERGE_REPEATED, null,
+			"Merge repeated Paradise Finds rows and show the total in Count.");
 		toolOptions.registerOption(OPTION_FIND_COLUMN_PRIORITY, true, null,
 			"Show Priority in the Paradise Finds tables.");
 		toolOptions.registerOption(OPTION_FIND_COLUMN_COUNT, true, null,
@@ -1487,6 +1495,7 @@ public class ParadisePlugin extends ProgramPlugin {
 		JCheckBox viewTriage = new JCheckBox("Triage", showAuxTab("Triage"));
 		JCheckBox viewCleanups = new JCheckBox("Cleanups", showAuxTab("Cleanups"));
 		JCheckBox viewFinds = new JCheckBox("URL/path finds window", showFindsWindow());
+		JCheckBox mergeFindRows = new JCheckBox("Merge repeated finds", mergeRepeatedFinds());
 		JCheckBox findColumnPriority = new JCheckBox("Priority", showFindColumn("Priority"));
 		JCheckBox findColumnCount = new JCheckBox("Count", showFindColumn("Count"));
 		JCheckBox findColumnKind = new JCheckBox("Kind", showFindColumn("Kind"));
@@ -1540,6 +1549,7 @@ public class ParadisePlugin extends ProgramPlugin {
 			viewTriage.setSelected(DEFAULT_SHOW_AUX_TAB);
 			viewCleanups.setSelected(DEFAULT_SHOW_AUX_TAB);
 			viewFinds.setSelected(DEFAULT_SHOW_AUX_TAB);
+			mergeFindRows.setSelected(DEFAULT_FIND_MERGE_REPEATED);
 			findColumnPriority.setSelected(true);
 			findColumnCount.setSelected(true);
 			findColumnKind.setSelected(true);
@@ -1608,7 +1618,7 @@ public class ParadisePlugin extends ProgramPlugin {
 		addOption(viewsPanel, viewsGc, optionSection("Visible Tabs", 3, viewXrefs,
 			viewLocals, viewTrace, viewCalls, viewStrings, viewDiff, viewDrafts,
 			viewSuggestions, viewTriage, viewCleanups));
-		addOption(viewsPanel, viewsGc, optionSection("Dockable Windows", 1, viewFinds));
+		addOption(viewsPanel, viewsGc, optionSection("Finds", 2, viewFinds, mergeFindRows));
 		addOption(viewsPanel, viewsGc, optionSection("Finds Columns", 4, findColumnPriority,
 			findColumnCount, findColumnKind, findColumnAddress, findColumnUse, findColumnSource,
 			findColumnChain, findColumnValue, findColumnEvidence));
@@ -1703,6 +1713,7 @@ public class ParadisePlugin extends ProgramPlugin {
 			cleanLocalAliases() != localAliasDisplay.isSelected() ||
 			displayTypeAliases() != typeAliases.isSelected() ||
 			showAddressComments() != addressComments.isSelected();
+		boolean findsMergeChanged = mergeRepeatedFinds() != mergeFindRows.isSelected();
 		ToolOptions toolOptions = options();
 		toolOptions.setBoolean(OPTION_ENABLE_HOTKEYS, hotkeys.isSelected());
 		toolOptions.setBoolean(OPTION_SYNC_LISTING, syncListing.isSelected());
@@ -1726,6 +1737,7 @@ public class ParadisePlugin extends ProgramPlugin {
 		toolOptions.setBoolean(OPTION_VIEW_TRIAGE, viewTriage.isSelected());
 		toolOptions.setBoolean(OPTION_VIEW_CLEANUPS, viewCleanups.isSelected());
 		toolOptions.setBoolean(OPTION_VIEW_FINDS_WINDOW, viewFinds.isSelected());
+		toolOptions.setBoolean(OPTION_FIND_MERGE_REPEATED, mergeFindRows.isSelected());
 		toolOptions.setBoolean(OPTION_FIND_COLUMN_PRIORITY, findColumnPriority.isSelected());
 		toolOptions.setBoolean(OPTION_FIND_COLUMN_COUNT, findColumnCount.isSelected());
 		toolOptions.setBoolean(OPTION_FIND_COLUMN_KIND, findColumnKind.isSelected());
@@ -1757,6 +1769,9 @@ public class ParadisePlugin extends ProgramPlugin {
 		provider.applyOptionsToOpenTabs();
 		findProvider.setVisible(viewFinds.isSelected());
 		findProvider.applyOptions();
+		if (findsMergeChanged && findProvider.hasScan()) {
+			findProvider.refreshScan();
+		}
 		if (formattingChanged && provider.currentResult() != null) {
 			engine.clearProgramCache(provider.currentResult().program());
 			provider.refreshCurrent();
@@ -1781,6 +1796,7 @@ public class ParadisePlugin extends ProgramPlugin {
 		toolOptions.setBoolean(OPTION_VIEW_TRIAGE, DEFAULT_SHOW_AUX_TAB);
 		toolOptions.setBoolean(OPTION_VIEW_CLEANUPS, DEFAULT_SHOW_AUX_TAB);
 		toolOptions.setBoolean(OPTION_VIEW_FINDS_WINDOW, DEFAULT_SHOW_AUX_TAB);
+		toolOptions.setBoolean(OPTION_FIND_MERGE_REPEATED, DEFAULT_FIND_MERGE_REPEATED);
 		toolOptions.setBoolean(OPTION_FIND_COLUMN_PRIORITY, true);
 		toolOptions.setBoolean(OPTION_FIND_COLUMN_COUNT, true);
 		toolOptions.setBoolean(OPTION_FIND_COLUMN_KIND, true);
@@ -1812,6 +1828,9 @@ public class ParadisePlugin extends ProgramPlugin {
 		provider.applyOptionsToOpenTabs();
 		findProvider.setVisible(DEFAULT_SHOW_AUX_TAB);
 		findProvider.applyOptions();
+		if (findProvider.hasScan()) {
+			findProvider.refreshScan();
+		}
 	}
 
 	private void addOption(JPanel panel, GridBagConstraints gc, JComponent component) {

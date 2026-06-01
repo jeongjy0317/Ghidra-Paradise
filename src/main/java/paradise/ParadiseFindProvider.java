@@ -124,6 +124,10 @@ final class ParadiseFindProvider extends ComponentProvider {
 		applyColumnOptions(pathTable);
 	}
 
+	boolean hasScan() {
+		return lastProgram != null || lastFunction != null || !overviewRows.isEmpty();
+	}
+
 	void scanActiveFunction() {
 		Function function = plugin.activeFunctionForFinds();
 		if (function == null) {
@@ -163,7 +167,8 @@ final class ParadiseFindProvider extends ComponentProvider {
 		TaskLauncher.launchNonModal("Paradise scan function finds", monitor -> {
 			List<ParadiseFindScanner.Row> rows;
 			try {
-				rows = ParadiseFindScanner.scanFunction(function, monitor);
+				rows = ParadiseFindScanner.scanFunction(function, plugin.mergeRepeatedFinds(),
+					monitor);
 			}
 			catch (CancelledException e) {
 				return;
@@ -183,7 +188,8 @@ final class ParadiseFindProvider extends ComponentProvider {
 		TaskLauncher.launchNonModal("Paradise scan program finds", monitor -> {
 			List<ParadiseFindScanner.Row> rows;
 			try {
-				rows = ParadiseFindScanner.scanProgram(program, monitor);
+				rows = ParadiseFindScanner.scanProgram(program, plugin.mergeRepeatedFinds(),
+					monitor);
 			}
 			catch (CancelledException e) {
 				return;
