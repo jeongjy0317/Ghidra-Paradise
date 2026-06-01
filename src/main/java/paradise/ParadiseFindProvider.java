@@ -435,6 +435,17 @@ final class ParadiseFindProvider extends ComponentProvider {
 		table.setRowHeight(20);
 		JTableHeader header = table.getTableHeader();
 		header.setReorderingAllowed(false);
+		Color tableBg = Color.WHITE;
+		Color tableFg = new Color(24, 24, 24);
+		Color headerBg = new Color(232, 232, 226);
+		Color headerFg = new Color(24, 24, 24);
+		Color selectionBg = new Color(204, 226, 255);
+		Color selectionFg = Color.BLACK;
+		table.setBackground(tableBg);
+		table.setForeground(tableFg);
+		table.setGridColor(new Color(210, 210, 205));
+		table.setSelectionBackground(selectionBg);
+		table.setSelectionForeground(selectionFg);
 		table.setDefaultRenderer(Object.class, new DefaultTableCellRenderer() {
 			@Override
 			public Component getTableCellRendererComponent(JTable table, Object value,
@@ -444,8 +455,31 @@ final class ParadiseFindProvider extends ComponentProvider {
 				if (!selected) {
 					component.setBackground(row % 2 == 0 ? new Color(248, 248, 244)
 							: new Color(255, 255, 252));
+					component.setForeground(tableFg);
+				}
+				else {
+					component.setBackground(selectionBg);
+					component.setForeground(selectionFg);
 				}
 				return component;
+			}
+		});
+		header.setOpaque(true);
+		header.setBackground(headerBg);
+		header.setForeground(headerFg);
+		header.setFont(table.getFont().deriveFont(java.awt.Font.BOLD));
+		header.setDefaultRenderer(new DefaultTableCellRenderer() {
+			@Override
+			public Component getTableCellRendererComponent(JTable table, Object value,
+					boolean selected, boolean focus, int row, int column) {
+				JLabel label = (JLabel) super.getTableCellRendererComponent(table, value, selected,
+					focus, row, column);
+				label.setOpaque(true);
+				label.setBackground(headerBg);
+				label.setForeground(headerFg);
+				label.setFont(table.getFont().deriveFont(java.awt.Font.BOLD));
+				label.setBorder(BorderFactory.createEmptyBorder(2, 4, 2, 4));
+				return label;
 			}
 		});
 		setColumnWidth(table, 0, 58);
