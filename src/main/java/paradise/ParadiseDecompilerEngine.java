@@ -20,6 +20,91 @@ import ghidra.util.task.TaskMonitor;
 
 final class ParadiseDecompilerEngine implements AutoCloseable {
 	private static final int WRAPPER_DETECTION_TIMEOUT_SECONDS = 10;
+	private static final String SCALAR_CAST_REGEX =
+		"\\((?:u?int(?:8|16|32|64)?_t|int(?:8|16|32|64)?_t|uint(?:8|16|32|64)?_t|int|uint|bool|char|long|ulong)\\)";
+	private static final String ZERO_VALUE_REGEX = "(?:\\([^)]*\\)\\s*)?(?:0x0|0|NULL|null)";
+	private static final Pattern LOCAL_DECLARATION_PATTERN =
+		Pattern.compile("^\\s*((?:[A-Za-z_][A-Za-z0-9_]*\\s+)+(?:\\*\\s*)?)(local_[0-9A-Za-z_]+)(?:\\s*\\[[^\\]]+\\])?\\s*;\\s*$",
+			Pattern.MULTILINE);
+	private static final Pattern IDENTIFIER_PATTERN = Pattern.compile("\\b[A-Za-z_]\\w*\\b");
+	private static final Pattern SECURITY_COOKIE_DAT_PATTERN =
+		Pattern.compile("^\\s*(\\w+)\\s*=\\s*DAT_[0-9a-fA-F]+\\s*\\^\\s*\\(uint64_t\\)(\\w+)\\s*;\\s*$");
+	private static final Pattern SECURITY_COOKIE_FS_PATTERN =
+		Pattern.compile("^\\s*(\\w+)\\s*=\\s*" + fsCanaryReadPattern("(\\w+)") + "\\s*;\\s*$");
+	private static final Pattern SECURITY_COOKIE_CHECK_PATTERN =
+		Pattern.compile("^\\s*if\\s*\\(\\s*(\\w+)\\s*!=\\s*" +
+			fsCanaryReadPattern("(\\w+)") + "\\s*\\)\\s*(\\{)?\\s*$");
+	private static final Pattern VARARGS_SIGNATURE_PATTERN =
+		Pattern.compile("^(\\s*.*?\\b)(FUN_[A-Za-z0-9_]+)\\s*\\((.*)\\)\\s*$");
+	private static final Pattern VARARGS_ASSIGNMENT_PATTERN =
+		Pattern.compile("^\\s*(local_res[0-9A-Za-z_]+)\\s*=\\s*(param_\\d+)\\s*;\\s*$");
+	private static final Pattern PARAMETER_NAME_PATTERN =
+		Pattern.compile("\\b([A-Za-z_][A-Za-z0-9_]*)\\s*(?:\\[[^\\]]*\\])?\\s*$");
+	private static final Pattern LOCAL_RES_DECLARATION_PATTERN =
+		Pattern.compile("^\\s*.+\\s+(local_res[0-9A-Za-z_]+)(?:\\s*\\[[^\\]]+\\])?\\s*;\\s*$");
+	private static final Pattern INT_INDEX_TYPE_PATTERN =
+		Pattern.compile(".*\\b(?:int|uint32_t|int32_t|size_t)\\b.*");
+	private static final Pattern ACRT_IOB_PATTERN =
+		Pattern.compile("__acrt_iob_func\\s*\\(\\s*(0x[0-9a-fA-F]+|\\d+)\\s*\\)");
+	private static final Pattern WRAPPER_RETURN_ASSIGNMENT_PATTERN =
+		Pattern.compile("^\\s*(\\w+)\\s*=\\s*.*;\\s*$");
+	private static final Pattern ZERO_LOOP_ASSIGNMENT_PATTERN =
+		Pattern.compile("^(\\s*)(\\w+)\\s*=\\s*(\\w+)\\s*;\\s*$");
+	private static final Pattern ZERO_LOOP_HEADER_PATTERN =
+		Pattern.compile("^\\s*for\\s*\\(\\s*(\\w+)\\s*=\\s*(?:0x[0-9a-fA-F]+|\\d+)\\s*;\\s*\\1\\s*!=\\s*0\\s*;\\s*\\1\\s*=\\s*\\1\\s*\\+\\s*-1\\s*\\)\\s*\\{\\s*$");
+	private static final Pattern WHILE_TRUE_HEADER_PATTERN =
+		Pattern.compile("^(\\s*)while\\s*\\(\\s*true\\s*\\)\\s*\\{\\s*$");
+	private static final Pattern FREAD_ASSIGNMENT_PATTERN =
+		Pattern.compile("^\\s*(\\w+)\\s*=\\s*(fread\\s*\\(.*\\))\\s*;\\s*$");
+	private static final Pattern CALL_EXPRESSION_PATTERN = Pattern.compile("^(\\w+)\\s*\\((.*)\\)$");
+	private static final Pattern BYTE_IO_CALL_PATTERN = Pattern.compile("\\b(fread|fwrite)\\s*\\(");
+	private static final Pattern BYTE_MUTATION_PATTERN =
+		Pattern.compile("^(\\s*)(\\w+)\\s*=\\s*\\(\\s*\\2\\s*\\^\\s*(.+)\\)\\s*\\+\\s*(0x[0-9a-fA-F]+|\\d+)\\s*;\\s*$");
+	private static final Pattern FOR_INIT_PATTERN =
+		Pattern.compile("^(\\s*)(\\w+)\\s*=\\s*(?:0|0x0)\\s*;\\s*$");
+	private static final Pattern IF_BREAK_PATTERN = Pattern.compile("^if\\s*\\((.*)\\)\\s*break;\\s*$");
+	private static final Pattern RETURN_PATTERN = Pattern.compile("^\\s*return\\s+([^;]+)\\s*;\\s*$");
+	private static final Pattern IF_CALL_ASSIGNMENT_PATTERN =
+		Pattern.compile("^(\\s*)(\\w+)\\s*=\\s*(\\w+\\s*\\(.*\\))\\s*;\\s*$");
+	private static final Pattern SIMPLE_BLOCK_HEADER_PATTERN =
+		Pattern.compile("^(\\s*)(if\\s*\\(.+\\))\\s*\\{\\s*$");
+	private static final Pattern CALL_LINE_PATTERN =
+		Pattern.compile("^(\\s*)(\\w+)\\s*\\((.*)\\)\\s*;\\s*$");
+	private static final Pattern ARRAY_DECLARATION_PATTERN =
+		Pattern.compile("^(\\s*)uint8_t\\s+(\\w+)\\s+\\[(\\d+)\\]\\s*;\\s*$");
+	private static final Pattern INDEX_DECLARATION_PATTERN =
+		Pattern.compile("^(\\s*)uint32_t\\s+(\\w+)\\s*;\\s*$");
+	private static final Pattern NULL_POINTER_CHECK_PATTERN =
+		Pattern.compile("^(\\s*)if\\s*\\(\\s*([A-Za-z_]\\w*)\\s*==\\s*(?:\\([^)]*\\*\\)\\s*)?(?:0x0|0|NULL|null)\\s*\\)(.*)$");
+	private static final Pattern IF_START_PATTERN = Pattern.compile("^(\\s*)if\\s*\\(");
+	private static final Pattern CONDITION_EQUALS_ZERO_PATTERN =
+		Pattern.compile("^(?:" + SCALAR_CAST_REGEX + "\\s*)?(.+?)\\s*==\\s*" +
+			ZERO_VALUE_REGEX + "$");
+	private static final Pattern CONDITION_NOT_EQUALS_ZERO_PATTERN =
+		Pattern.compile("^(?:" + SCALAR_CAST_REGEX + "\\s*)?(.+?)\\s*!=\\s*" +
+			ZERO_VALUE_REGEX + "$");
+	private static final Pattern CONDITION_CAST_ONLY_PATTERN =
+		Pattern.compile("^" + SCALAR_CAST_REGEX + "\\s*(.+)$");
+	private static final Pattern SIMPLE_BOOLEAN_IDENTIFIER_PATTERN =
+		Pattern.compile("[A-Za-z_]\\w*");
+	private static final Pattern SIMPLE_BOOLEAN_CALL_PATTERN =
+		Pattern.compile("[A-Za-z_]\\w*\\s*\\([^;{}]*\\)");
+	private static final Pattern SIMPLE_BOOLEAN_PAREN_PATTERN = Pattern.compile("\\([^;{}]+\\)");
+	private static final Pattern INCREMENT_ASSIGNMENT_PATTERN =
+		Pattern.compile("^(\\s*)([A-Za-z_]\\w*)\\s*=\\s*\\2\\s*\\+\\s*(?:1|0x1)\\s*;\\s*$");
+	private static final Pattern COMPOUND_DIRECT_PATTERN =
+		Pattern.compile("^(\\s*)([A-Za-z_]\\w*(?:\\s*\\[[^\\]]+\\])?)\\s*=\\s*\\2\\s*(<<|>>|[+\\-*/%&|^])\\s*(.+?)\\s*;\\s*$");
+	private static final Pattern COMPOUND_REVERSED_PATTERN =
+		Pattern.compile("^(\\s*)([A-Za-z_]\\w*(?:\\s*\\[[^\\]]+\\])?)\\s*=\\s*(.+?)\\s*([+*&|^])\\s*\\2\\s*;\\s*$");
+	private static final Pattern CALL_ASSIGNMENT_SPACING_PATTERN =
+		Pattern.compile("^(\\s*\\w+\\s*=\\s*)(\\w+)\\s*\\((.*)\\)\\s*;\\s*$");
+	private static final Pattern DAT_INDEX_PATTERN =
+		Pattern.compile("\\(&\\s*(DAT_[0-9a-fA-F]+)\\s*\\)\\s*\\[\\s*([^\\]]+?)\\s*\\]");
+	private static final Pattern DECLARATION_NAME_PATTERN =
+		Pattern.compile("^\\s*(?:[A-Za-z_][A-Za-z0-9_]*\\s+)+(?:\\*\\s*)?([A-Za-z_]\\w*)(?:\\s*\\[[^\\]]+\\])?\\s*;\\s*$");
+	private static final Pattern INPUT_REGISTER_PATTERN = Pattern.compile("in_[A-Za-z0-9]+");
+	private static final Pattern SIMPLE_IDENTIFIER_PATTERN = Pattern.compile("[A-Za-z_][A-Za-z0-9_]*");
+	private static final Pattern UNSIGNED_ONE_PATTERN = Pattern.compile("(?i)(1|0x1)");
 
 	private final Map<Program, DecompInterface> interfaces = new IdentityHashMap<>();
 	private final Map<Program, Map<CacheKey, ParadiseDecompileResult>> cache = new IdentityHashMap<>();
@@ -705,9 +790,7 @@ final class ParadiseDecompilerEngine implements AutoCloseable {
 
 	private Map<String, String> localDeclarations(String code) {
 		Map<String, String> declarations = new LinkedHashMap<>();
-		Pattern declaration = Pattern.compile("^\\s*((?:[A-Za-z_][A-Za-z0-9_]*\\s+)+(?:\\*\\s*)?)(local_[0-9A-Za-z_]+)(?:\\s*\\[[^\\]]+\\])?\\s*;\\s*$",
-			Pattern.MULTILINE);
-		Matcher matcher = declaration.matcher(code);
+		Matcher matcher = LOCAL_DECLARATION_PATTERN.matcher(code);
 		while (matcher.find()) {
 			declarations.put(matcher.group(2), matcher.group(1).replaceAll("\\s+", " ").trim());
 		}
@@ -716,7 +799,7 @@ final class ParadiseDecompilerEngine implements AutoCloseable {
 
 	private Set<String> identifiersIn(String code) {
 		Set<String> identifiers = new HashSet<>();
-		Matcher matcher = Pattern.compile("\\b[A-Za-z_]\\w*\\b").matcher(code);
+		Matcher matcher = IDENTIFIER_PATTERN.matcher(code);
 		while (matcher.find()) {
 			identifiers.add(matcher.group());
 		}
@@ -744,10 +827,10 @@ final class ParadiseDecompilerEngine implements AutoCloseable {
 				Pattern.quote(name) + "\\b").matcher(code).find()) {
 			return "ptr";
 		}
-		if (lowerType.matches(".*\\b(?:int|uint32_t|int32_t|size_t)\\b.*") &&
-			Pattern.compile("(?:\\+\\+|--)\\s*" + Pattern.quote(name) + "\\b|\\b" +
-				Pattern.quote(name) + "\\s*(?:\\+\\+|--)|\\b" + Pattern.quote(name) +
-				"\\s*%").matcher(code).find()) {
+			if (INT_INDEX_TYPE_PATTERN.matcher(lowerType).matches() &&
+				Pattern.compile("(?:\\+\\+|--)\\s*" + Pattern.quote(name) + "\\b|\\b" +
+					Pattern.quote(name) + "\\s*(?:\\+\\+|--)|\\b" + Pattern.quote(name) +
+					"\\s*%").matcher(code).find()) {
 			return "i";
 		}
 		return null;
@@ -889,9 +972,7 @@ final class ParadiseDecompilerEngine implements AutoCloseable {
 	}
 
 	private boolean collectSecurityCookieLine(String line, CleanupPlan plan) {
-		Matcher matcher = Pattern.compile(
-			"^\\s*(\\w+)\\s*=\\s*DAT_[0-9a-fA-F]+\\s*\\^\\s*\\(uint64_t\\)(\\w+)\\s*;\\s*$")
-				.matcher(line);
+		Matcher matcher = SECURITY_COOKIE_DAT_PATTERN.matcher(line);
 		if (matcher.matches()) {
 			plan.securityCookieLocals.add(matcher.group(1));
 			plan.securityCookieScratch.add(matcher.group(2));
@@ -900,8 +981,7 @@ final class ParadiseDecompilerEngine implements AutoCloseable {
 			plan.recordCleanup("Removed stack canary setup/check");
 			return true;
 		}
-		matcher = Pattern.compile("^\\s*(\\w+)\\s*=\\s*" + fsCanaryReadPattern("(\\w+)") +
-			"\\s*;\\s*$").matcher(line);
+		matcher = SECURITY_COOKIE_FS_PATTERN.matcher(line);
 		if (matcher.matches()) {
 			plan.securityCookieLocals.add(matcher.group(1));
 			plan.securityCookieScratch.add(matcher.group(2));
@@ -913,7 +993,7 @@ final class ParadiseDecompilerEngine implements AutoCloseable {
 		return false;
 	}
 
-	private String fsCanaryReadPattern(String scratchPattern) {
+	private static String fsCanaryReadPattern(String scratchPattern) {
 		return "\\*\\s*\\(\\s*(?:long|u?int64_t)\\s*\\*\\s*\\)\\s*\\(\\s*" +
 			scratchPattern + "\\s*\\+\\s*(?:'\\('|0x28u?|40u?)\\s*\\)";
 	}
@@ -923,9 +1003,7 @@ final class ParadiseDecompilerEngine implements AutoCloseable {
 		if (index + 1 >= lines.size()) {
 			return null;
 		}
-		Matcher condition = Pattern.compile("^\\s*if\\s*\\(\\s*(\\w+)\\s*!=\\s*" +
-			fsCanaryReadPattern("(\\w+)") + "\\s*\\)\\s*(\\{)?\\s*$")
-				.matcher(lines.get(index).text());
+		Matcher condition = SECURITY_COOKIE_CHECK_PATTERN.matcher(lines.get(index).text());
 		if (!condition.matches()) {
 			return null;
 		}
@@ -952,9 +1030,7 @@ final class ParadiseDecompilerEngine implements AutoCloseable {
 		int signatureIndex = -1;
 		Matcher signature = null;
 		for (int i = 0; i < lines.size(); i++) {
-			Matcher matcher = Pattern.compile(
-				"^(\\s*.*?\\b)(FUN_[A-Za-z0-9_]+)\\s*\\((.*)\\)\\s*$")
-					.matcher(lines.get(i).text());
+			Matcher matcher = VARARGS_SIGNATURE_PATTERN.matcher(lines.get(i).text());
 			if (!matcher.matches()) {
 				continue;
 			}
@@ -990,9 +1066,7 @@ final class ParadiseDecompilerEngine implements AutoCloseable {
 		Map<String, String> varargLocals = new LinkedHashMap<>();
 		List<Integer> assignmentIndexes = new ArrayList<>();
 		for (int i = 0; i < lines.size(); i++) {
-			Matcher assignment = Pattern.compile(
-				"^\\s*(local_res[0-9A-Za-z_]+)\\s*=\\s*(param_\\d+)\\s*;\\s*$")
-					.matcher(lines.get(i).text());
+			Matcher assignment = VARARGS_ASSIGNMENT_PATTERN.matcher(lines.get(i).text());
 			if (!assignment.matches() || !parameterNames.contains(assignment.group(2))) {
 				continue;
 			}
@@ -1002,16 +1076,16 @@ final class ParadiseDecompilerEngine implements AutoCloseable {
 		if (varargLocals.isEmpty()) {
 			return null;
 		}
-		String vaListLocal = varargLocals.keySet().iterator().next();
+			String vaListLocal = varargLocals.keySet().iterator().next();
 
-		int callIndex = -1;
-		String callLine = null;
-		for (int i = 0; i < lines.size(); i++) {
-			String text = lines.get(i).text();
-			if (Pattern.compile("\\(va_list\\)\\s*&\\s*" + Pattern.quote(vaListLocal) + "\\b")
-					.matcher(text).find()) {
-				callIndex = i;
-				callLine = text;
+			int callIndex = -1;
+			String callLine = null;
+			Pattern vaListCast = vaListCastPattern(vaListLocal);
+			for (int i = 0; i < lines.size(); i++) {
+				String text = lines.get(i).text();
+				if (vaListCast.matcher(text).find()) {
+					callIndex = i;
+					callLine = text;
 				break;
 			}
 		}
@@ -1067,8 +1141,7 @@ final class ParadiseDecompilerEngine implements AutoCloseable {
 			}
 		}
 
-		String callReplacement = Pattern.compile("\\(va_list\\)\\s*&\\s*" +
-			Pattern.quote(vaListLocal) + "\\b").matcher(callLine).replaceAll(argsName);
+		String callReplacement = vaListCast.matcher(callLine).replaceAll(argsName);
 		replacements.put(callIndex, List.of(normalizeCallSpacing(callReplacement)));
 
 		int returnIndex = wrapperReturnIndex(lines, callIndex);
@@ -1098,23 +1171,22 @@ final class ParadiseDecompilerEngine implements AutoCloseable {
 	}
 
 	private String parameterName(String parameter) {
-		Matcher matcher = Pattern.compile(
-			"\\b([A-Za-z_][A-Za-z0-9_]*)\\s*(?:\\[[^\\]]*\\])?\\s*$")
-				.matcher(parameter.trim());
+		Matcher matcher = PARAMETER_NAME_PATTERN.matcher(parameter.trim());
 		return matcher.find() ? matcher.group(1) : null;
 	}
 
 	private String localResDeclarationName(String line) {
-		Matcher matcher = Pattern.compile(
-			"^\\s*.+\\s+(local_res[0-9A-Za-z_]+)(?:\\s*\\[[^\\]]+\\])?\\s*;\\s*$")
-				.matcher(line);
+		Matcher matcher = LOCAL_RES_DECLARATION_PATTERN.matcher(line);
 		return matcher.matches() ? matcher.group(1) : null;
+	}
+
+	private Pattern vaListCastPattern(String vaListLocal) {
+		return Pattern.compile("\\(va_list\\)\\s*&\\s*" + Pattern.quote(vaListLocal) + "\\b");
 	}
 
 	private VarargsWrapperKind varargsWrapperKind(List<CodeLine> lines, String callLine) {
 		for (CodeLine line : lines) {
-			Matcher matcher = Pattern.compile("__acrt_iob_func\\s*\\(\\s*(0x[0-9a-fA-F]+|\\d+)\\s*\\)")
-					.matcher(line.text());
+			Matcher matcher = ACRT_IOB_PATTERN.matcher(line.text());
 			if (!matcher.find()) {
 				continue;
 			}
@@ -1151,8 +1223,7 @@ final class ParadiseDecompilerEngine implements AutoCloseable {
 	}
 
 	private int wrapperReturnIndex(List<CodeLine> lines, int callIndex) {
-		Matcher assignment = Pattern.compile("^\\s*(\\w+)\\s*=\\s*.*;\\s*$")
-				.matcher(lines.get(callIndex).text());
+		Matcher assignment = WRAPPER_RETURN_ASSIGNMENT_PATTERN.matcher(lines.get(callIndex).text());
 		String returnVariable = assignment.matches() ? assignment.group(1) : null;
 		int limit = Math.min(lines.size(), callIndex + 4);
 		for (int i = callIndex + 1; i < limit; i++) {
@@ -1179,16 +1250,14 @@ final class ParadiseDecompilerEngine implements AutoCloseable {
 		if (index + 4 >= lines.size()) {
 			return null;
 		}
-		Matcher assign = Pattern.compile("^(\\s*)(\\w+)\\s*=\\s*(\\w+)\\s*;\\s*$")
-				.matcher(lines.get(index).text());
+		Matcher assign = ZERO_LOOP_ASSIGNMENT_PATTERN.matcher(lines.get(index).text());
 		if (!assign.matches()) {
 			return null;
 		}
 		String indent = assign.group(1);
 		String pointer = assign.group(2);
 		String buffer = assign.group(3);
-		Matcher loop = Pattern.compile("^\\s*for\\s*\\(\\s*(\\w+)\\s*=\\s*(?:0x[0-9a-fA-F]+|\\d+)\\s*;\\s*\\1\\s*!=\\s*0\\s*;\\s*\\1\\s*=\\s*\\1\\s*\\+\\s*-1\\s*\\)\\s*\\{\\s*$")
-				.matcher(lines.get(index + 1).text());
+		Matcher loop = ZERO_LOOP_HEADER_PATTERN.matcher(lines.get(index + 1).text());
 		if (!loop.matches()) {
 			return null;
 		}
@@ -1211,14 +1280,12 @@ final class ParadiseDecompilerEngine implements AutoCloseable {
 		if (index + 2 >= lines.size()) {
 			return null;
 		}
-		Matcher loop = Pattern.compile("^(\\s*)while\\s*\\(\\s*true\\s*\\)\\s*\\{\\s*$")
-				.matcher(lines.get(index).text());
+		Matcher loop = WHILE_TRUE_HEADER_PATTERN.matcher(lines.get(index).text());
 		if (!loop.matches()) {
 			return null;
 		}
 		String indent = loop.group(1);
-		Matcher assignment = Pattern.compile("^\\s*(\\w+)\\s*=\\s*(fread\\s*\\(.*\\))\\s*;\\s*$")
-				.matcher(lines.get(index + 1).text());
+		Matcher assignment = FREAD_ASSIGNMENT_PATTERN.matcher(lines.get(index + 1).text());
 		if (!assignment.matches()) {
 			return null;
 		}
@@ -1246,7 +1313,7 @@ final class ParadiseDecompilerEngine implements AutoCloseable {
 	}
 
 	private String normalizeCallExpression(String expression) {
-		Matcher matcher = Pattern.compile("^(\\w+)\\s*\\((.*)\\)$").matcher(expression.trim());
+		Matcher matcher = CALL_EXPRESSION_PATTERN.matcher(expression.trim());
 		if (!matcher.matches()) {
 			return cleanCommonExpressions(expression).replaceAll("\\s+", " ").trim();
 		}
@@ -1258,7 +1325,7 @@ final class ParadiseDecompilerEngine implements AutoCloseable {
 	}
 
 	private String normalizeByteIoCalls(String text, CleanupPlan plan) {
-		Matcher matcher = Pattern.compile("\\b(fread|fwrite)\\s*\\(").matcher(text);
+		Matcher matcher = BYTE_IO_CALL_PATTERN.matcher(text);
 		StringBuilder result = new StringBuilder();
 		int index = 0;
 		boolean changed = false;
@@ -1341,12 +1408,11 @@ final class ParadiseDecompilerEngine implements AutoCloseable {
 	}
 
 	private String unsignedOne(String arg) {
-		return arg.matches("(?i)(1|0x1)") ? "1u" : arg;
+		return UNSIGNED_ONE_PATTERN.matcher(arg).matches() ? "1u" : arg;
 	}
 
 	private ByteMutationCleanup byteMutationCleanupAt(List<CodeLine> lines, int index) {
-		Matcher matcher = Pattern.compile("^(\\s*)(\\w+)\\s*=\\s*\\(\\s*\\2\\s*\\^\\s*(.+)\\)\\s*\\+\\s*(0x[0-9a-fA-F]+|\\d+)\\s*;\\s*$")
-				.matcher(lines.get(index).text());
+		Matcher matcher = BYTE_MUTATION_PATTERN.matcher(lines.get(index).text());
 		if (!matcher.matches()) {
 			return null;
 		}
@@ -1366,15 +1432,13 @@ final class ParadiseDecompilerEngine implements AutoCloseable {
 		if (index + 8 >= lines.size()) {
 			return null;
 		}
-		Matcher init = Pattern.compile("^(\\s*)(\\w+)\\s*=\\s*(?:0|0x0)\\s*;\\s*$")
-				.matcher(lines.get(index).text());
+		Matcher init = FOR_INIT_PATTERN.matcher(lines.get(index).text());
 		if (!init.matches()) {
 			return null;
 		}
 		String indent = init.group(1);
 		String variable = init.group(2);
-		if (!Pattern.compile("^\\s*while\\s*\\(\\s*true\\s*\\)\\s*\\{\\s*$")
-				.matcher(lines.get(index + 1).text()).matches()) {
+		if (!WHILE_TRUE_HEADER_PATTERN.matcher(lines.get(index + 1).text()).matches()) {
 			return null;
 		}
 
@@ -1433,17 +1497,16 @@ final class ParadiseDecompilerEngine implements AutoCloseable {
 		for (int i = index; i < lines.size(); i++) {
 			String trimmed = lines.get(i).text().trim();
 			if (i == index) {
-				if (!trimmed.startsWith("if")) {
-					return null;
-				}
+			if (!trimmed.startsWith("if")) {
+				return null;
+			}
 				builder.append(trimmed);
 			}
 			else {
 				builder.append(' ').append(trimmed);
 			}
 			if (trimmed.endsWith("break;")) {
-				Matcher matcher = Pattern.compile("^if\\s*\\((.*)\\)\\s*break;\\s*$")
-						.matcher(builder.toString());
+				Matcher matcher = IF_BREAK_PATTERN.matcher(builder.toString());
 				if (!matcher.matches()) {
 					return null;
 				}
@@ -1489,7 +1552,7 @@ final class ParadiseDecompilerEngine implements AutoCloseable {
 	}
 
 	private String returnValue(String line) {
-		Matcher matcher = Pattern.compile("^\\s*return\\s+([^;]+)\\s*;\\s*$").matcher(line);
+		Matcher matcher = RETURN_PATTERN.matcher(line);
 		return matcher.matches() ? matcher.group(1).trim() : null;
 	}
 
@@ -1497,8 +1560,7 @@ final class ParadiseDecompilerEngine implements AutoCloseable {
 		if (index + 6 >= lines.size()) {
 			return null;
 		}
-		Matcher assign = Pattern.compile("^(\\s*)(\\w+)\\s*=\\s*(\\w+\\s*\\(.*\\))\\s*;\\s*$")
-				.matcher(lines.get(index).text());
+		Matcher assign = IF_CALL_ASSIGNMENT_PATTERN.matcher(lines.get(index).text());
 		if (!assign.matches()) {
 			return null;
 		}
@@ -1529,8 +1591,7 @@ final class ParadiseDecompilerEngine implements AutoCloseable {
 		if (index + 2 >= lines.size()) {
 			return null;
 		}
-		Matcher header = Pattern.compile("^(\\s*)(if\\s*\\(.+\\))\\s*\\{\\s*$")
-				.matcher(lines.get(index).text());
+		Matcher header = SIMPLE_BLOCK_HEADER_PATTERN.matcher(lines.get(index).text());
 		if (!header.matches()) {
 			return null;
 		}
@@ -1596,7 +1657,7 @@ final class ParadiseDecompilerEngine implements AutoCloseable {
 	}
 
 	private String cleanCallLine(String line, CleanupPlan plan, CleanupContext context) {
-		Matcher matcher = Pattern.compile("^(\\s*)(\\w+)\\s*\\((.*)\\)\\s*;\\s*$").matcher(line);
+		Matcher matcher = CALL_LINE_PATTERN.matcher(line);
 		if (!matcher.matches()) {
 			return line;
 		}
@@ -1735,13 +1796,12 @@ final class ParadiseDecompilerEngine implements AutoCloseable {
 			return line.replace("int main(int argc,char **argv,char **envp)",
 				"int main(int argc, const char **argv, const char **envp)");
 		}
-		Matcher arrayDecl = Pattern.compile("^(\\s*)uint8_t\\s+(\\w+)\\s+\\[(\\d+)\\]\\s*;\\s*$")
-				.matcher(line);
+		Matcher arrayDecl = ARRAY_DECLARATION_PATTERN.matcher(line);
 		if (arrayDecl.matches() && plan.charBuffers.contains(arrayDecl.group(2))) {
 			return arrayDecl.group(1) + "char " + arrayDecl.group(2) + "[" +
 				arrayDecl.group(3) + "];";
 		}
-		Matcher indexDecl = Pattern.compile("^(\\s*)uint32_t\\s+(\\w+)\\s*;\\s*$").matcher(line);
+		Matcher indexDecl = INDEX_DECLARATION_PATTERN.matcher(line);
 		if (indexDecl.matches() && plan.intIndexLocals.contains(indexDecl.group(2))) {
 			return indexDecl.group(1) + "int " + indexDecl.group(2) + ";";
 		}
@@ -1784,8 +1844,7 @@ final class ParadiseDecompilerEngine implements AutoCloseable {
 	}
 
 	private String cleanNullPointerCheck(String line, CleanupPlan plan) {
-		Matcher matcher = Pattern.compile("^(\\s*)if\\s*\\(\\s*([A-Za-z_]\\w*)\\s*==\\s*(?:\\([^)]*\\*\\)\\s*)?(?:0x0|0|NULL|null)\\s*\\)(.*)$")
-				.matcher(line);
+		Matcher matcher = NULL_POINTER_CHECK_PATTERN.matcher(line);
 		if (!matcher.matches()) {
 			return line;
 		}
@@ -1794,7 +1853,7 @@ final class ParadiseDecompilerEngine implements AutoCloseable {
 	}
 
 	private String cleanBooleanCondition(String line, CleanupPlan plan) {
-		Matcher start = Pattern.compile("^(\\s*)if\\s*\\(").matcher(line);
+		Matcher start = IF_START_PATTERN.matcher(line);
 		if (!start.find()) {
 			return line;
 		}
@@ -1814,30 +1873,22 @@ final class ParadiseDecompilerEngine implements AutoCloseable {
 
 	private ConditionText cleanConditionExpression(String condition) {
 		String trimmed = condition.trim();
-		String zeroPattern = "(?:\\([^)]*\\)\\s*)?(?:0x0|0|NULL|null)";
-		Matcher equalsZero = Pattern.compile("^(?:" + scalarCastPattern() +
-			"\\s*)?(.+?)\\s*==\\s*" + zeroPattern + "$").matcher(trimmed);
+		Matcher equalsZero = CONDITION_EQUALS_ZERO_PATTERN.matcher(trimmed);
 		if (equalsZero.matches() && isSimpleBooleanExpression(equalsZero.group(1))) {
 			return new ConditionText("!" + parenthesizeConditionOperand(equalsZero.group(1).trim()),
 				"Simplified boolean conditions");
 		}
-		Matcher notEqualsZero = Pattern.compile("^(?:" + scalarCastPattern() +
-			"\\s*)?(.+?)\\s*!=\\s*" + zeroPattern + "$").matcher(trimmed);
+		Matcher notEqualsZero = CONDITION_NOT_EQUALS_ZERO_PATTERN.matcher(trimmed);
 		if (notEqualsZero.matches() && isSimpleBooleanExpression(notEqualsZero.group(1))) {
 			return new ConditionText(parenthesizeConditionOperand(notEqualsZero.group(1).trim()),
 				"Simplified boolean conditions");
 		}
-		Matcher castOnly = Pattern.compile("^" + scalarCastPattern() +
-			"\\s*(.+)$").matcher(trimmed);
+		Matcher castOnly = CONDITION_CAST_ONLY_PATTERN.matcher(trimmed);
 		if (castOnly.matches() && isSimpleBooleanExpression(castOnly.group(1))) {
 			return new ConditionText(parenthesizeConditionOperand(castOnly.group(1).trim()),
 				"Simplified boolean conditions");
 		}
 		return null;
-	}
-
-	private String scalarCastPattern() {
-		return "\\((?:u?int(?:8|16|32|64)?_t|int(?:8|16|32|64)?_t|uint(?:8|16|32|64)?_t|int|uint|bool|char|long|ulong)\\)";
 	}
 
 	private boolean isSimpleBooleanExpression(String expression) {
@@ -1846,15 +1897,15 @@ final class ParadiseDecompilerEngine implements AutoCloseable {
 			trimmed.contains("?")) {
 			return false;
 		}
-		return trimmed.matches("[A-Za-z_]\\w*") ||
-			trimmed.matches("[A-Za-z_]\\w*\\s*\\([^;{}]*\\)") ||
-			trimmed.matches("\\([^;{}]+\\)");
+		return SIMPLE_BOOLEAN_IDENTIFIER_PATTERN.matcher(trimmed).matches() ||
+			SIMPLE_BOOLEAN_CALL_PATTERN.matcher(trimmed).matches() ||
+			SIMPLE_BOOLEAN_PAREN_PATTERN.matcher(trimmed).matches();
 	}
 
 	private String parenthesizeConditionOperand(String expression) {
 		String trimmed = expression.trim();
-		if (trimmed.matches("[A-Za-z_]\\w*") ||
-			trimmed.matches("[A-Za-z_]\\w*\\s*\\([^;{}]*\\)") ||
+		if (SIMPLE_BOOLEAN_IDENTIFIER_PATTERN.matcher(trimmed).matches() ||
+			SIMPLE_BOOLEAN_CALL_PATTERN.matcher(trimmed).matches() ||
 			(trimmed.startsWith("(") && trimmed.endsWith(")"))) {
 			return trimmed;
 		}
@@ -1862,8 +1913,7 @@ final class ParadiseDecompilerEngine implements AutoCloseable {
 	}
 
 	private String cleanIncrementAssignment(String line, CleanupPlan plan) {
-		Matcher matcher = Pattern.compile("^(\\s*)([A-Za-z_]\\w*)\\s*=\\s*\\2\\s*\\+\\s*(?:1|0x1)\\s*;\\s*$")
-				.matcher(line);
+		Matcher matcher = INCREMENT_ASSIGNMENT_PATTERN.matcher(line);
 		if (!matcher.matches()) {
 			return line;
 		}
@@ -1872,15 +1922,13 @@ final class ParadiseDecompilerEngine implements AutoCloseable {
 	}
 
 	private String cleanCompoundAssignment(String line, CleanupPlan plan) {
-		Matcher direct = Pattern.compile("^(\\s*)([A-Za-z_]\\w*(?:\\s*\\[[^\\]]+\\])?)\\s*=\\s*\\2\\s*(<<|>>|[+\\-*/%&|^])\\s*(.+?)\\s*;\\s*$")
-				.matcher(line);
+		Matcher direct = COMPOUND_DIRECT_PATTERN.matcher(line);
 		if (direct.matches() && isCompoundAssignmentRhs(direct.group(4))) {
 			plan.recordCleanup("Simplified compound assignments");
 			return direct.group(1) + direct.group(2).trim() + " " + direct.group(3) + "= " +
 				direct.group(4).trim() + ";";
 		}
-		Matcher reversed = Pattern.compile("^(\\s*)([A-Za-z_]\\w*(?:\\s*\\[[^\\]]+\\])?)\\s*=\\s*(.+?)\\s*([+*&|^])\\s*\\2\\s*;\\s*$")
-				.matcher(line);
+		Matcher reversed = COMPOUND_REVERSED_PATTERN.matcher(line);
 		if (reversed.matches() && isCompoundAssignmentRhs(reversed.group(3))) {
 			plan.recordCleanup("Simplified compound assignments");
 			return reversed.group(1) + reversed.group(2).trim() + " " + reversed.group(4) +
@@ -1896,8 +1944,7 @@ final class ParadiseDecompilerEngine implements AutoCloseable {
 	}
 
 	private String normalizeCallSpacing(String line) {
-		Matcher assignment = Pattern.compile("^(\\s*\\w+\\s*=\\s*)(\\w+)\\s*\\((.*)\\)\\s*;\\s*$")
-				.matcher(line);
+		Matcher assignment = CALL_ASSIGNMENT_SPACING_PATTERN.matcher(line);
 		if (assignment.matches()) {
 			List<String> args = splitArguments(assignment.group(3));
 			if (args.size() < 2) {
@@ -1906,7 +1953,7 @@ final class ParadiseDecompilerEngine implements AutoCloseable {
 			return assignment.group(1) + assignment.group(2) + "(" + String.join(", ", args) +
 				");";
 		}
-		Matcher matcher = Pattern.compile("^(\\s*)(\\w+)\\s*\\((.*)\\)\\s*;\\s*$").matcher(line);
+		Matcher matcher = CALL_LINE_PATTERN.matcher(line);
 		if (!matcher.matches()) {
 			return line;
 		}
@@ -1941,8 +1988,7 @@ final class ParadiseDecompilerEngine implements AutoCloseable {
 		result = result.replaceAll("\\(int64_t\\)\\s*\\(int8_t\\)", "(int8_t)");
 		result = result.replaceAll("\\(int64_t\\)\\s*\\(int16_t\\)", "(int16_t)");
 		result = result.replaceAll("\\(int64_t\\)\\s*\\(int32_t\\)", "(int32_t)");
-		result = Pattern.compile("\\(&\\s*(DAT_[0-9a-fA-F]+)\\s*\\)\\s*\\[\\s*([^\\]]+?)\\s*\\]")
-				.matcher(result).replaceAll("$1[$2]");
+		result = DAT_INDEX_PATTERN.matcher(result).replaceAll("$1[$2]");
 		result = result.replaceAll("\\b(DAT_[0-9a-fA-F]+\\s*\\[\\s*)\\(int\\)\\s*([A-Za-z_]\\w*)\\s*\\]",
 			"$1$2]");
 		result = result.replaceAll("\\b(param_\\d+)\\s*\\+\\s*\\(int\\)\\s*([A-Za-z_]\\w*)",
@@ -1981,8 +2027,7 @@ final class ParadiseDecompilerEngine implements AutoCloseable {
 	}
 
 	private String declarationName(String line) {
-		Matcher matcher = Pattern.compile("^\\s*(?:[A-Za-z_][A-Za-z0-9_]*\\s+)+(?:\\*\\s*)?([A-Za-z_]\\w*)(?:\\s*\\[[^\\]]+\\])?\\s*;\\s*$")
-				.matcher(line);
+		Matcher matcher = DECLARATION_NAME_PATTERN.matcher(line);
 		if (matcher.matches()) {
 			return matcher.group(1);
 		}
@@ -1997,11 +2042,11 @@ final class ParadiseDecompilerEngine implements AutoCloseable {
 	}
 
 	private boolean isInputRegister(String arg) {
-		return arg.trim().matches("in_[A-Za-z0-9]+");
+		return INPUT_REGISTER_PATTERN.matcher(arg.trim()).matches();
 	}
 
 	private boolean isSimpleIdentifier(String arg) {
-		return arg.matches("[A-Za-z_][A-Za-z0-9_]*");
+		return SIMPLE_IDENTIFIER_PATTERN.matcher(arg).matches();
 	}
 
 	private boolean isStringLiteral(String text) {

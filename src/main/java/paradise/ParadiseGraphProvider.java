@@ -99,6 +99,22 @@ import ghidra.util.task.TaskLauncher;
 import ghidra.util.task.TaskMonitor;
 
 final class ParadiseGraphProvider extends ComponentProvider {
+	private static final Pattern COMMENT_SYMBOL_PATTERN =
+		Pattern.compile("( ; )([A-Za-z_][A-Za-z0-9_]*)(?=\\s*(?:\"|;|$))");
+	private static final Pattern CODE_TOKEN_PATTERN =
+		Pattern.compile("\"(?:\\\\.|[^\"\\\\])*\"|-?0x[0-9a-fA-F]+|-?[0-9a-fA-F]+h\\b|\\b\\d+\\b|\\b[A-Za-z_][A-Za-z0-9_@$?.]*\\b");
+	private static final Pattern NUMBER_TOKEN_PATTERN =
+		Pattern.compile("-?0x[0-9a-fA-F]+|-?[0-9a-fA-F]+h|\\d+");
+	private static final Pattern TRUE_BRANCH_TOKEN_PATTERN = Pattern.compile("(?i)(je|jz)");
+	private static final Pattern FALSE_BRANCH_TOKEN_PATTERN = Pattern.compile("(?i)(jne|jnz)");
+	private static final Pattern JUMP_TOKEN_PATTERN = Pattern.compile("(?i)jmp");
+	private static final Pattern REGISTER_TOKEN_PATTERN =
+		Pattern.compile("(?i)(r[a-z0-9]+|e[a-z0-9]+|[abcd][lh]|[re]?[abcd]x|[er]?[sd]i|[er]?[sb]p|[er]?[sc]x|[er]?[sd]x|[cdefgs]s)");
+	private static final Pattern FRAME_TOKEN_PATTERN =
+		Pattern.compile("(var|arg|local|param)_[0-9A-Za-z_]+");
+	private static final Pattern KNOWN_IMPORT_PATTERN =
+		Pattern.compile("(puts|printf|scanf|gets|memset|memcpy|strlen|strcmp|strncmp|malloc|free|exit|abort)");
+
 	private final ParadisePlugin plugin;
 	private final JPanel panel = new JPanel(new BorderLayout());
 	private final JLabel titleLabel = new JLabel("Paradise Diagram");
@@ -1151,14 +1167,13 @@ final class ParadiseGraphProvider extends ComponentProvider {
 			if (!suffix.isEmpty()) {
 				drawComment(g2, suffix, currentX, y);
 			}
-		}
+			}
 
-		private void drawComment(Graphics2D g2, String text, double x, double y) {
-			Matcher matcher = Pattern.compile("( ; )([A-Za-z_][A-Za-z0-9_]*)(?=\\s*(?:\"|;|$))")
-					.matcher(text);
-			int index = 0;
-			double currentX = x;
-			while (matcher.find()) {
+			private void drawComment(Graphics2D g2, String text, double x, double y) {
+				Matcher matcher = COMMENT_SYMBOL_PATTERN.matcher(text);
+				int index = 0;
+				double currentX = x;
+				while (matcher.find()) {
 				if (matcher.start() > index) {
 					currentX = drawSegment(g2, text.substring(index, matcher.start()), currentX, y,
 						new Color(128, 128, 128));
@@ -1172,15 +1187,13 @@ final class ParadiseGraphProvider extends ComponentProvider {
 			if (index < text.length()) {
 				drawSegment(g2, text.substring(index), currentX, y, new Color(128, 128, 128));
 			}
-		}
+			}
 
-		private double drawColoredCode(Graphics2D g2, String text, double x, double y) {
-			Matcher matcher = Pattern.compile(
-				"\"(?:\\\\.|[^\"\\\\])*\"|-?0x[0-9a-fA-F]+|-?[0-9a-fA-F]+h\\b|\\b\\d+\\b|\\b[A-Za-z_][A-Za-z0-9_@$?.]*\\b")
-					.matcher(text);
-			int index = 0;
-			double currentX = x;
-			while (matcher.find()) {
+			private double drawColoredCode(Graphics2D g2, String text, double x, double y) {
+				Matcher matcher = CODE_TOKEN_PATTERN.matcher(text);
+				int index = 0;
+				double currentX = x;
+				while (matcher.find()) {
 				if (matcher.start() > index) {
 					currentX = drawSegment(g2, text.substring(index, matcher.start()), currentX, y,
 						new Color(230, 230, 230));
@@ -1197,30 +1210,30 @@ final class ParadiseGraphProvider extends ComponentProvider {
 		}
 
 		private Color tokenColor(String token) {
-			if (token.startsWith("\"")) {
-				return new Color(150, 150, 150);
-			}
-			if (token.matches("-?0x[0-9a-fA-F]+|-?[0-9a-fA-F]+h|\\d+")) {
-				return new Color(255, 120, 100);
-			}
-			if (token.matches("(?i)(je|jz)")) {
-				return new Color(36, 178, 55);
-			}
-			if (token.matches("(?i)(jne|jnz)")) {
-				return new Color(220, 40, 44);
-			}
-			if (token.matches("(?i)jmp")) {
-				return new Color(50, 96, 220);
-			}
-			if (graph != null && graph.frameNames().contains(token)) {
-				return new Color(255, 138, 0);
-			}
-			if (token.matches("(?i)(r[a-z0-9]+|e[a-z0-9]+|[abcd][lh]|[re]?[abcd]x|[er]?[sd]i|[er]?[sb]p|[er]?[sc]x|[er]?[sd]x|[cdefgs]s)")) {
-				return new Color(117, 222, 224);
-			}
-			if (token.matches("(var|arg|local|param)_[0-9A-Za-z_]+")) {
-				return new Color(255, 138, 0);
-			}
+				if (token.startsWith("\"")) {
+					return new Color(150, 150, 150);
+				}
+				if (NUMBER_TOKEN_PATTERN.matcher(token).matches()) {
+					return new Color(255, 120, 100);
+				}
+				if (TRUE_BRANCH_TOKEN_PATTERN.matcher(token).matches()) {
+					return new Color(36, 178, 55);
+				}
+				if (FALSE_BRANCH_TOKEN_PATTERN.matcher(token).matches()) {
+					return new Color(220, 40, 44);
+				}
+				if (JUMP_TOKEN_PATTERN.matcher(token).matches()) {
+					return new Color(50, 96, 220);
+				}
+				if (graph != null && graph.frameNames().contains(token)) {
+					return new Color(255, 138, 0);
+				}
+				if (REGISTER_TOKEN_PATTERN.matcher(token).matches()) {
+					return new Color(117, 222, 224);
+				}
+				if (FRAME_TOKEN_PATTERN.matcher(token).matches()) {
+					return new Color(255, 138, 0);
+				}
 			if (token.startsWith("__") || token.startsWith("_") || isKnownImport(token)) {
 				return new Color(0, 220, 220);
 			}
@@ -1232,11 +1245,11 @@ final class ParadiseGraphProvider extends ComponentProvider {
 				return new Color(255, 232, 0);
 			}
 			return new Color(230, 230, 230);
-		}
+			}
 
-		private boolean isKnownImport(String token) {
-			return token.matches("(puts|printf|scanf|gets|memset|memcpy|strlen|strcmp|strncmp|malloc|free|exit|abort)");
-		}
+			private boolean isKnownImport(String token) {
+				return KNOWN_IMPORT_PATTERN.matcher(token).matches();
+			}
 
 		private double drawSegment(Graphics2D g2, String text, double x, double y, Color color) {
 			g2.setColor(color);
@@ -2054,6 +2067,13 @@ final class ParadiseGraphProvider extends ComponentProvider {
 }
 
 final class ParadiseGraphBuilder {
+	private static final Pattern FRAME_ARROW_PATTERN =
+		Pattern.compile("\\b([a-z][a-z0-9]*)=>[^,\\s\\]]+");
+	private static final Pattern STACK_OFFSET_PATTERN =
+		Pattern.compile("\\[(r[bs]p)([+-])0x([0-9a-f]+)\\]");
+	private static final Pattern HEX_CONSTANT_PATTERN =
+		Pattern.compile("(?<![A-Za-z0-9_])0x([0-9a-f]+)(?![A-Za-z0-9_])");
+
 	private ParadiseGraphBuilder() {
 	}
 
@@ -2726,21 +2746,20 @@ final class ParadiseGraphBuilder {
 		if (operand == null) {
 			return "";
 		}
-		String normalized = operand.toLowerCase(Locale.ROOT)
-				.replace(" + -", "-")
-				.replace(" + ", "+")
-				.replace(" - ", "-");
-		normalized = normalized.replaceAll("\\b([a-z][a-z0-9]*)=>[^,\\s\\]]+", "$1");
-		normalized = applyStackNames(normalized, frameDisplay);
-		return simplifyHexConstants(normalized);
-	}
+			String normalized = operand.toLowerCase(Locale.ROOT)
+					.replace(" + -", "-")
+					.replace(" + ", "+")
+					.replace(" - ", "-");
+			normalized = FRAME_ARROW_PATTERN.matcher(normalized).replaceAll("$1");
+			normalized = applyStackNames(normalized, frameDisplay);
+			return simplifyHexConstants(normalized);
+		}
 
-	private static String applyStackNames(String operand, FrameDisplay frameDisplay) {
-		Matcher matcher = Pattern.compile("\\[(r[bs]p)([+-])0x([0-9a-f]+)\\]")
-				.matcher(operand);
-		StringBuffer buffer = new StringBuffer();
-		while (matcher.find()) {
-			int value;
+		private static String applyStackNames(String operand, FrameDisplay frameDisplay) {
+			Matcher matcher = STACK_OFFSET_PATTERN.matcher(operand);
+			StringBuffer buffer = new StringBuffer();
+			while (matcher.find()) {
+				int value;
 			try {
 				value = Integer.parseUnsignedInt(matcher.group(3), 16);
 			}
@@ -2757,13 +2776,12 @@ final class ParadiseGraphBuilder {
 		}
 		matcher.appendTail(buffer);
 		return buffer.toString();
-	}
+		}
 
-	private static String simplifyHexConstants(String operand) {
-		Matcher matcher = Pattern.compile("(?<![A-Za-z0-9_])0x([0-9a-f]+)(?![A-Za-z0-9_])")
-				.matcher(operand);
-		StringBuffer buffer = new StringBuffer();
-		while (matcher.find()) {
+		private static String simplifyHexConstants(String operand) {
+			Matcher matcher = HEX_CONSTANT_PATTERN.matcher(operand);
+			StringBuffer buffer = new StringBuffer();
+			while (matcher.find()) {
 			long value;
 			try {
 				value = Long.parseUnsignedLong(matcher.group(1), 16);

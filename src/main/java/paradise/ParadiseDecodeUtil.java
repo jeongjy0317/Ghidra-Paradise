@@ -13,6 +13,17 @@ import java.util.regex.Pattern;
 
 final class ParadiseDecodeUtil {
 	private static final int MAX_RECURSIVE_STEPS = 5;
+	private static final Pattern WHITESPACE_PATTERN = Pattern.compile("\\s+");
+	private static final Pattern BASE64_PAYLOAD_PATTERN = Pattern.compile("[A-Za-z0-9+/=_-]+");
+	private static final Pattern PADDING_PATTERN = Pattern.compile("=+");
+	private static final Pattern HEX_ESCAPE_PATTERN = Pattern.compile("\\\\x([0-9A-Fa-f]{2})");
+	private static final Pattern HEX_PREFIX_PATTERN = Pattern.compile("(?i)0x");
+	private static final Pattern HEX_SEPARATOR_PATTERN = Pattern.compile("[\\s,;:_-]+");
+	private static final Pattern HEX_PAYLOAD_PATTERN = Pattern.compile("[0-9A-Fa-f]+");
+	private static final Pattern URL_ESCAPE_PATTERN = Pattern.compile("%[0-9A-Fa-f]{2}");
+	private static final Pattern BASE32_SEPARATOR_PATTERN = Pattern.compile("[\\s-]+");
+	private static final Pattern BASE32_PAYLOAD_PATTERN = Pattern.compile("[A-Z2-7=]+");
+	private static final Pattern WINDOWS_DRIVE_PATH_PATTERN = Pattern.compile("^[a-z]:\\\\.*");
 
 	private ParadiseDecodeUtil() {
 	}
@@ -212,16 +223,16 @@ final class ParadiseDecodeUtil {
 			text.substring(0, dataComma).toLowerCase(Locale.ROOT).contains(";base64")) {
 			text = text.substring(dataComma + 1);
 		}
-		String compact = text.replaceAll("\\s+", "");
-		if (compact.length() < 8 || compact.length() % 4 == 1 ||
-			!compact.matches("[A-Za-z0-9+/=_-]+")) {
-			return null;
-		}
-		int firstPadding = compact.indexOf('=');
-		if (firstPadding >= 0 && !compact.substring(firstPadding).matches("=+")) {
-			return null;
-		}
-		return compact;
+			String compact = WHITESPACE_PATTERN.matcher(text).replaceAll("");
+			if (compact.length() < 8 || compact.length() % 4 == 1 ||
+				!BASE64_PAYLOAD_PATTERN.matcher(compact).matches()) {
+				return null;
+			}
+			int firstPadding = compact.indexOf('=');
+			if (firstPadding >= 0 && !PADDING_PATTERN.matcher(compact.substring(firstPadding)).matches()) {
+				return null;
+			}
+			return compact;
 	}
 
 	private static byte[] decodeBase64(String encoded) {
@@ -248,20 +259,20 @@ final class ParadiseDecodeUtil {
 		if (source == null) {
 			return null;
 		}
-		Matcher escaped = Pattern.compile("\\\\x([0-9A-Fa-f]{2})").matcher(source);
-		java.io.ByteArrayOutputStream escapedOut = new java.io.ByteArrayOutputStream();
-		while (escaped.find()) {
-			escapedOut.write(Integer.parseInt(escaped.group(1), 16));
+			Matcher escaped = HEX_ESCAPE_PATTERN.matcher(source);
+			java.io.ByteArrayOutputStream escapedOut = new java.io.ByteArrayOutputStream();
+			while (escaped.find()) {
+				escapedOut.write(Integer.parseInt(escaped.group(1), 16));
 		}
 		if (escapedOut.size() > 0) {
 			return escapedOut.toByteArray();
 		}
 
-		String compact = source.trim().replaceAll("(?i)0x", "")
-				.replaceAll("[\\s,;:_-]+", "");
-		if (!compact.matches("[0-9A-Fa-f]+")) {
-			return null;
-		}
+			String compact = HEX_SEPARATOR_PATTERN.matcher(
+				HEX_PREFIX_PATTERN.matcher(source.trim()).replaceAll("")).replaceAll("");
+			if (!HEX_PAYLOAD_PATTERN.matcher(compact).matches()) {
+				return null;
+			}
 		if (compact.length() < 4 || (compact.length() & 1) != 0) {
 			return null;
 		}
@@ -273,9 +284,9 @@ final class ParadiseDecodeUtil {
 	}
 
 	private static byte[] urlBytes(String source) {
-		if (source == null || !Pattern.compile("%[0-9A-Fa-f]{2}").matcher(source).find()) {
-			return null;
-		}
+			if (source == null || !URL_ESCAPE_PATTERN.matcher(source).find()) {
+				return null;
+			}
 		java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
 		boolean changed = false;
 		for (int i = 0; i < source.length(); i++) {
@@ -299,14 +310,15 @@ final class ParadiseDecodeUtil {
 		if (source == null) {
 			return null;
 		}
-		String compact = source.trim().replaceAll("[\\s-]+", "").toUpperCase(Locale.ROOT);
-		if (compact.length() < 8 || !compact.matches("[A-Z2-7=]+")) {
-			return null;
-		}
-		int firstPadding = compact.indexOf('=');
-		if (firstPadding >= 0 && !compact.substring(firstPadding).matches("=+")) {
-			return null;
-		}
+			String compact = BASE32_SEPARATOR_PATTERN.matcher(source.trim()).replaceAll("")
+					.toUpperCase(Locale.ROOT);
+			if (compact.length() < 8 || !BASE32_PAYLOAD_PATTERN.matcher(compact).matches()) {
+				return null;
+			}
+			int firstPadding = compact.indexOf('=');
+			if (firstPadding >= 0 && !PADDING_PATTERN.matcher(compact.substring(firstPadding)).matches()) {
+				return null;
+			}
 		if (firstPadding < 0 && compact.length() < 16) {
 			return null;
 		}
@@ -389,9 +401,10 @@ final class ParadiseDecodeUtil {
 		if (lower.startsWith("http://") || lower.startsWith("https://")) {
 			return "url";
 		}
-		if (lower.matches("^[a-z]:\\\\.*") || lower.startsWith("/") || lower.startsWith("\\\\")) {
-			return "path";
-		}
+			if (WINDOWS_DRIVE_PATH_PATTERN.matcher(lower).matches() || lower.startsWith("/") ||
+				lower.startsWith("\\\\")) {
+				return "path";
+			}
 		return "text";
 	}
 

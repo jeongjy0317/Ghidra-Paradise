@@ -153,6 +153,48 @@ public class ParadisePlugin extends ProgramPlugin {
 	private static final boolean DEFAULT_FIND_MERGE_REPEATED = true;
 	private static final String FIND_DETAILS_SCREEN = "Screen";
 	private static final String FIND_DETAILS_TEXT = "Text";
+	private static final BooleanOptionSpec[] AUX_TAB_OPTIONS = {
+		new BooleanOptionSpec("Xrefs", OPTION_VIEW_XREFS, DEFAULT_SHOW_AUX_TAB,
+			"Show the Xrefs bottom panel tab."),
+		new BooleanOptionSpec("Locals", OPTION_VIEW_LOCALS, DEFAULT_SHOW_AUX_TAB,
+			"Show the Locals bottom panel tab."),
+		new BooleanOptionSpec("Trace", OPTION_VIEW_TRACE, DEFAULT_SHOW_AUX_TAB,
+			"Show the Trace bottom panel tab."),
+		new BooleanOptionSpec("Calls", OPTION_VIEW_CALLS, DEFAULT_SHOW_AUX_TAB,
+			"Show the Calls bottom panel tab."),
+		new BooleanOptionSpec("Strings", OPTION_VIEW_STRINGS, DEFAULT_SHOW_AUX_TAB,
+			"Show the Strings bottom panel tab."),
+		new BooleanOptionSpec("Diff", OPTION_VIEW_DIFF, DEFAULT_SHOW_AUX_TAB,
+			"Show the Diff bottom panel tab."),
+		new BooleanOptionSpec("Drafts", OPTION_VIEW_DRAFTS, DEFAULT_SHOW_AUX_TAB,
+			"Show the Drafts bottom panel tab."),
+		new BooleanOptionSpec("Suggestions", OPTION_VIEW_SUGGESTIONS, DEFAULT_SHOW_AUX_TAB,
+			"Show the Suggestions bottom panel tab."),
+		new BooleanOptionSpec("Triage", OPTION_VIEW_TRIAGE, DEFAULT_SHOW_AUX_TAB,
+			"Show the Triage bottom panel tab."),
+		new BooleanOptionSpec("Cleanups", OPTION_VIEW_CLEANUPS, DEFAULT_SHOW_AUX_TAB,
+			"Show the Cleanups bottom panel tab.")
+	};
+	private static final BooleanOptionSpec[] FIND_COLUMN_OPTIONS = {
+		new BooleanOptionSpec("Priority", OPTION_FIND_COLUMN_PRIORITY, true,
+			"Show Priority in the Paradise Inspector tables."),
+		new BooleanOptionSpec("Count", OPTION_FIND_COLUMN_COUNT, true,
+			"Show Count in the Paradise Inspector tables."),
+		new BooleanOptionSpec("Kind", OPTION_FIND_COLUMN_KIND, true,
+			"Show Kind in the Paradise Inspector tables."),
+		new BooleanOptionSpec("Address", OPTION_FIND_COLUMN_ADDRESS, true,
+			"Show Address in the Paradise Inspector tables."),
+		new BooleanOptionSpec("Use", OPTION_FIND_COLUMN_USE, true,
+			"Show Use in the Paradise Inspector tables."),
+		new BooleanOptionSpec("Source", OPTION_FIND_COLUMN_SOURCE, true,
+			"Show Source in the Paradise Inspector tables."),
+		new BooleanOptionSpec("Decode Chain", OPTION_FIND_COLUMN_CHAIN, true,
+			"Show Decode Chain in the Paradise Inspector tables."),
+		new BooleanOptionSpec("Value", OPTION_FIND_COLUMN_VALUE, true,
+			"Show Value in the Paradise Inspector tables."),
+		new BooleanOptionSpec("Evidence", OPTION_FIND_COLUMN_EVIDENCE, true,
+			"Show Evidence in the Paradise Inspector tables.")
+	};
 
 	private final ParadiseDecompilerEngine engine = new ParadiseDecompilerEngine();
 	private final ParadiseDecompilerProvider provider;
@@ -291,20 +333,8 @@ public class ParadisePlugin extends ProgramPlugin {
 	}
 
 	boolean showAuxTab(String title) {
-		String option = switch (title) {
-			case "Xrefs" -> OPTION_VIEW_XREFS;
-			case "Locals" -> OPTION_VIEW_LOCALS;
-			case "Trace" -> OPTION_VIEW_TRACE;
-			case "Calls" -> OPTION_VIEW_CALLS;
-			case "Strings" -> OPTION_VIEW_STRINGS;
-			case "Diff" -> OPTION_VIEW_DIFF;
-			case "Drafts" -> OPTION_VIEW_DRAFTS;
-			case "Suggestions" -> OPTION_VIEW_SUGGESTIONS;
-			case "Triage" -> OPTION_VIEW_TRIAGE;
-			case "Cleanups" -> OPTION_VIEW_CLEANUPS;
-			default -> null;
-		};
-		return option == null || options().getBoolean(option, DEFAULT_SHOW_AUX_TAB);
+		BooleanOptionSpec spec = optionSpec(AUX_TAB_OPTIONS, title);
+		return spec == null || options().getBoolean(spec.option(), spec.defaultValue());
 	}
 
 	boolean showFindsWindow() {
@@ -318,19 +348,8 @@ public class ParadisePlugin extends ProgramPlugin {
 	}
 
 	boolean showFindColumn(String title) {
-		String option = switch (title) {
-			case "Priority" -> OPTION_FIND_COLUMN_PRIORITY;
-			case "Count" -> OPTION_FIND_COLUMN_COUNT;
-			case "Kind" -> OPTION_FIND_COLUMN_KIND;
-			case "Address" -> OPTION_FIND_COLUMN_ADDRESS;
-			case "Use" -> OPTION_FIND_COLUMN_USE;
-			case "Source" -> OPTION_FIND_COLUMN_SOURCE;
-			case "Decode Chain" -> OPTION_FIND_COLUMN_CHAIN;
-			case "Value" -> OPTION_FIND_COLUMN_VALUE;
-			case "Evidence" -> OPTION_FIND_COLUMN_EVIDENCE;
-			default -> null;
-		};
-		return option == null || options().getBoolean(option, true);
+		BooleanOptionSpec spec = optionSpec(FIND_COLUMN_OPTIONS, title);
+		return spec == null || options().getBoolean(spec.option(), spec.defaultValue());
 	}
 
 	boolean inspectorDetailsScreen() {
@@ -1430,48 +1449,12 @@ public class ParadisePlugin extends ProgramPlugin {
 			"Show token addresses in the pseudocode gutter.");
 		toolOptions.registerOption(OPTION_SHOW_AUX_PANELS, DEFAULT_SHOW_AUX_PANELS, null,
 			"Show the Paradise bottom inspection panels.");
-		toolOptions.registerOption(OPTION_VIEW_XREFS, DEFAULT_SHOW_AUX_TAB, null,
-			"Show the Xrefs bottom panel tab.");
-		toolOptions.registerOption(OPTION_VIEW_LOCALS, DEFAULT_SHOW_AUX_TAB, null,
-			"Show the Locals bottom panel tab.");
-		toolOptions.registerOption(OPTION_VIEW_TRACE, DEFAULT_SHOW_AUX_TAB, null,
-			"Show the Trace bottom panel tab.");
-		toolOptions.registerOption(OPTION_VIEW_CALLS, DEFAULT_SHOW_AUX_TAB, null,
-			"Show the Calls bottom panel tab.");
-		toolOptions.registerOption(OPTION_VIEW_STRINGS, DEFAULT_SHOW_AUX_TAB, null,
-			"Show the Strings bottom panel tab.");
-		toolOptions.registerOption(OPTION_VIEW_DIFF, DEFAULT_SHOW_AUX_TAB, null,
-			"Show the Diff bottom panel tab.");
-		toolOptions.registerOption(OPTION_VIEW_DRAFTS, DEFAULT_SHOW_AUX_TAB, null,
-			"Show the Drafts bottom panel tab.");
-		toolOptions.registerOption(OPTION_VIEW_SUGGESTIONS, DEFAULT_SHOW_AUX_TAB, null,
-			"Show the Suggestions bottom panel tab.");
-		toolOptions.registerOption(OPTION_VIEW_TRIAGE, DEFAULT_SHOW_AUX_TAB, null,
-			"Show the Triage bottom panel tab.");
-		toolOptions.registerOption(OPTION_VIEW_CLEANUPS, DEFAULT_SHOW_AUX_TAB, null,
-			"Show the Cleanups bottom panel tab.");
+		registerBooleanOptions(toolOptions, AUX_TAB_OPTIONS);
 		toolOptions.registerOption(OPTION_VIEW_FINDS_WINDOW, DEFAULT_SHOW_AUX_TAB, null,
 			"Show the Paradise URL/path/shell/registry inspector dockable window.");
 		toolOptions.registerOption(OPTION_FIND_MERGE_REPEATED, DEFAULT_FIND_MERGE_REPEATED, null,
 			"Merge repeated Paradise Inspector rows and show the total in Count.");
-		toolOptions.registerOption(OPTION_FIND_COLUMN_PRIORITY, true, null,
-			"Show Priority in the Paradise Inspector tables.");
-		toolOptions.registerOption(OPTION_FIND_COLUMN_COUNT, true, null,
-			"Show Count in the Paradise Inspector tables.");
-		toolOptions.registerOption(OPTION_FIND_COLUMN_KIND, true, null,
-			"Show Kind in the Paradise Inspector tables.");
-		toolOptions.registerOption(OPTION_FIND_COLUMN_ADDRESS, true, null,
-			"Show Address in the Paradise Inspector tables.");
-		toolOptions.registerOption(OPTION_FIND_COLUMN_USE, true, null,
-			"Show Use in the Paradise Inspector tables.");
-		toolOptions.registerOption(OPTION_FIND_COLUMN_SOURCE, true, null,
-			"Show Source in the Paradise Inspector tables.");
-		toolOptions.registerOption(OPTION_FIND_COLUMN_CHAIN, true, null,
-			"Show Decode Chain in the Paradise Inspector tables.");
-		toolOptions.registerOption(OPTION_FIND_COLUMN_VALUE, true, null,
-			"Show Value in the Paradise Inspector tables.");
-		toolOptions.registerOption(OPTION_FIND_COLUMN_EVIDENCE, true, null,
-			"Show Evidence in the Paradise Inspector tables.");
+		registerBooleanOptions(toolOptions, FIND_COLUMN_OPTIONS);
 		toolOptions.registerOption(OPTION_FIND_DETAILS_RENDERER, FIND_DETAILS_SCREEN, null,
 			"Render Paradise Inspector details as a scrollable screen or plain text.");
 		toolOptions.registerOption(OPTION_CURRENT_LINE, DEFAULT_CURRENT_LINE, null,
@@ -1528,29 +1511,12 @@ public class ParadisePlugin extends ProgramPlugin {
 		JCheckBox lineNumbers = new JCheckBox("Show line numbers", showLineNumbers());
 		JCheckBox tokenAddresses = new JCheckBox("Show gutter addresses", showTokenAddresses());
 		JCheckBox auxPanels = new JCheckBox("Show analysis panels", showAuxPanels());
-		JCheckBox viewXrefs = new JCheckBox("Xrefs", showAuxTab("Xrefs"));
-		JCheckBox viewLocals = new JCheckBox("Locals", showAuxTab("Locals"));
-		JCheckBox viewTrace = new JCheckBox("Trace", showAuxTab("Trace"));
-		JCheckBox viewCalls = new JCheckBox("Calls", showAuxTab("Calls"));
-		JCheckBox viewStrings = new JCheckBox("Strings", showAuxTab("Strings"));
-		JCheckBox viewDiff = new JCheckBox("Diff", showAuxTab("Diff"));
-		JCheckBox viewDrafts = new JCheckBox("Drafts", showAuxTab("Drafts"));
-		JCheckBox viewSuggestions = new JCheckBox("Suggestions", showAuxTab("Suggestions"));
-		JCheckBox viewTriage = new JCheckBox("Triage", showAuxTab("Triage"));
-		JCheckBox viewCleanups = new JCheckBox("Cleanups", showAuxTab("Cleanups"));
+		Map<String, JCheckBox> viewTabChecks = optionCheckBoxes(AUX_TAB_OPTIONS);
 		JCheckBox viewFinds = new JCheckBox("URL/path/shell/registry inspector window",
 			showFindsWindow());
 		JCheckBox mergeFindRows = new JCheckBox("Merge repeated inspector rows",
 			mergeRepeatedFinds());
-		JCheckBox findColumnPriority = new JCheckBox("Priority", showFindColumn("Priority"));
-		JCheckBox findColumnCount = new JCheckBox("Count", showFindColumn("Count"));
-		JCheckBox findColumnKind = new JCheckBox("Kind", showFindColumn("Kind"));
-		JCheckBox findColumnAddress = new JCheckBox("Address", showFindColumn("Address"));
-		JCheckBox findColumnUse = new JCheckBox("Use", showFindColumn("Use"));
-		JCheckBox findColumnSource = new JCheckBox("Source", showFindColumn("Source"));
-		JCheckBox findColumnChain = new JCheckBox("Decode Chain", showFindColumn("Decode Chain"));
-		JCheckBox findColumnValue = new JCheckBox("Value", showFindColumn("Value"));
-		JCheckBox findColumnEvidence = new JCheckBox("Evidence", showFindColumn("Evidence"));
+		Map<String, JCheckBox> findColumnChecks = optionCheckBoxes(FIND_COLUMN_OPTIONS);
 		JComboBox<String> findDetailsRenderer =
 			new JComboBox<>(new String[] { FIND_DETAILS_SCREEN, FIND_DETAILS_TEXT });
 		findDetailsRenderer.setSelectedItem(options().getString(OPTION_FIND_DETAILS_RENDERER,
@@ -1588,27 +1554,10 @@ public class ParadisePlugin extends ProgramPlugin {
 			lineNumbers.setSelected(DEFAULT_SHOW_LINE_NUMBERS);
 			tokenAddresses.setSelected(DEFAULT_SHOW_TOKEN_ADDRESSES);
 			auxPanels.setSelected(DEFAULT_SHOW_AUX_PANELS);
-			viewXrefs.setSelected(DEFAULT_SHOW_AUX_TAB);
-			viewLocals.setSelected(DEFAULT_SHOW_AUX_TAB);
-			viewTrace.setSelected(DEFAULT_SHOW_AUX_TAB);
-			viewCalls.setSelected(DEFAULT_SHOW_AUX_TAB);
-			viewStrings.setSelected(DEFAULT_SHOW_AUX_TAB);
-			viewDiff.setSelected(DEFAULT_SHOW_AUX_TAB);
-			viewDrafts.setSelected(DEFAULT_SHOW_AUX_TAB);
-			viewSuggestions.setSelected(DEFAULT_SHOW_AUX_TAB);
-			viewTriage.setSelected(DEFAULT_SHOW_AUX_TAB);
-			viewCleanups.setSelected(DEFAULT_SHOW_AUX_TAB);
+			resetOptionCheckBoxes(viewTabChecks, AUX_TAB_OPTIONS);
 			viewFinds.setSelected(DEFAULT_SHOW_AUX_TAB);
 			mergeFindRows.setSelected(DEFAULT_FIND_MERGE_REPEATED);
-			findColumnPriority.setSelected(true);
-			findColumnCount.setSelected(true);
-			findColumnKind.setSelected(true);
-			findColumnAddress.setSelected(true);
-			findColumnUse.setSelected(true);
-			findColumnSource.setSelected(true);
-			findColumnChain.setSelected(true);
-			findColumnValue.setSelected(true);
-			findColumnEvidence.setSelected(true);
+			resetOptionCheckBoxes(findColumnChecks, FIND_COLUMN_OPTIONS);
 			findDetailsRenderer.setSelectedItem(FIND_DETAILS_SCREEN);
 			currentLine.setSelected(DEFAULT_CURRENT_LINE);
 			braceMatch.setSelected(DEFAULT_BRACE_MATCHING);
@@ -1666,9 +1615,8 @@ public class ParadisePlugin extends ProgramPlugin {
 		GridBagConstraints viewsGc = settingsConstraints();
 		addSectionHeader(viewsPanel, viewsGc, "Views");
 		addOption(viewsPanel, viewsGc, optionSection("Analysis Pane", 1, auxPanels));
-		addOption(viewsPanel, viewsGc, optionSection("Visible Tabs", 3, viewXrefs,
-			viewLocals, viewTrace, viewCalls, viewStrings, viewDiff, viewDrafts,
-			viewSuggestions, viewTriage, viewCleanups));
+		addOption(viewsPanel, viewsGc,
+			optionSection("Visible Tabs", 3, optionComponents(viewTabChecks)));
 		addSettingsFiller(viewsPanel, viewsGc);
 
 		JPanel findsPanel = settingsPanel();
@@ -1677,9 +1625,8 @@ public class ParadisePlugin extends ProgramPlugin {
 		addOption(findsPanel, findsGc, optionSection("Window", 2, viewFinds, mergeFindRows));
 		addOption(findsPanel, findsGc, optionSection("Details", 1,
 			labeledField("Renderer:", findDetailsRenderer)));
-		addOption(findsPanel, findsGc, optionSection("Columns", 4, findColumnPriority,
-			findColumnCount, findColumnKind, findColumnAddress, findColumnUse, findColumnSource,
-			findColumnChain, findColumnValue, findColumnEvidence));
+		addOption(findsPanel, findsGc,
+			optionSection("Columns", 4, optionComponents(findColumnChecks)));
 		addSettingsFiller(findsPanel, findsGc);
 
 		JPanel exportPanel = settingsPanel();
@@ -1786,27 +1733,10 @@ public class ParadisePlugin extends ProgramPlugin {
 		toolOptions.setBoolean(OPTION_SHOW_LINE_NUMBERS, lineNumbers.isSelected());
 		toolOptions.setBoolean(OPTION_SHOW_TOKEN_ADDRESSES, tokenAddresses.isSelected());
 		toolOptions.setBoolean(OPTION_SHOW_AUX_PANELS, auxPanels.isSelected());
-		toolOptions.setBoolean(OPTION_VIEW_XREFS, viewXrefs.isSelected());
-		toolOptions.setBoolean(OPTION_VIEW_LOCALS, viewLocals.isSelected());
-		toolOptions.setBoolean(OPTION_VIEW_TRACE, viewTrace.isSelected());
-		toolOptions.setBoolean(OPTION_VIEW_CALLS, viewCalls.isSelected());
-		toolOptions.setBoolean(OPTION_VIEW_STRINGS, viewStrings.isSelected());
-		toolOptions.setBoolean(OPTION_VIEW_DIFF, viewDiff.isSelected());
-		toolOptions.setBoolean(OPTION_VIEW_DRAFTS, viewDrafts.isSelected());
-		toolOptions.setBoolean(OPTION_VIEW_SUGGESTIONS, viewSuggestions.isSelected());
-		toolOptions.setBoolean(OPTION_VIEW_TRIAGE, viewTriage.isSelected());
-		toolOptions.setBoolean(OPTION_VIEW_CLEANUPS, viewCleanups.isSelected());
+		saveOptionCheckBoxes(toolOptions, viewTabChecks, AUX_TAB_OPTIONS);
 		toolOptions.setBoolean(OPTION_VIEW_FINDS_WINDOW, viewFinds.isSelected());
 		toolOptions.setBoolean(OPTION_FIND_MERGE_REPEATED, mergeFindRows.isSelected());
-		toolOptions.setBoolean(OPTION_FIND_COLUMN_PRIORITY, findColumnPriority.isSelected());
-		toolOptions.setBoolean(OPTION_FIND_COLUMN_COUNT, findColumnCount.isSelected());
-		toolOptions.setBoolean(OPTION_FIND_COLUMN_KIND, findColumnKind.isSelected());
-		toolOptions.setBoolean(OPTION_FIND_COLUMN_ADDRESS, findColumnAddress.isSelected());
-		toolOptions.setBoolean(OPTION_FIND_COLUMN_USE, findColumnUse.isSelected());
-		toolOptions.setBoolean(OPTION_FIND_COLUMN_SOURCE, findColumnSource.isSelected());
-		toolOptions.setBoolean(OPTION_FIND_COLUMN_CHAIN, findColumnChain.isSelected());
-		toolOptions.setBoolean(OPTION_FIND_COLUMN_VALUE, findColumnValue.isSelected());
-		toolOptions.setBoolean(OPTION_FIND_COLUMN_EVIDENCE, findColumnEvidence.isSelected());
+		saveOptionCheckBoxes(toolOptions, findColumnChecks, FIND_COLUMN_OPTIONS);
 		toolOptions.setString(OPTION_FIND_DETAILS_RENDERER,
 			Objects.toString(findDetailsRenderer.getSelectedItem(), FIND_DETAILS_SCREEN));
 		toolOptions.setBoolean(OPTION_CURRENT_LINE, currentLine.isSelected());
@@ -1840,6 +1770,59 @@ public class ParadisePlugin extends ProgramPlugin {
 		}
 	}
 
+	private static BooleanOptionSpec optionSpec(BooleanOptionSpec[] specs, String label) {
+		for (BooleanOptionSpec spec : specs) {
+			if (spec.label().equals(label)) {
+				return spec;
+			}
+		}
+		return null;
+	}
+
+	private void registerBooleanOptions(ToolOptions toolOptions, BooleanOptionSpec[] specs) {
+		for (BooleanOptionSpec spec : specs) {
+			toolOptions.registerOption(spec.option(), spec.defaultValue(), null, spec.description());
+		}
+	}
+
+	private Map<String, JCheckBox> optionCheckBoxes(BooleanOptionSpec[] specs) {
+		Map<String, JCheckBox> boxes = new LinkedHashMap<>();
+		for (BooleanOptionSpec spec : specs) {
+			boxes.put(spec.label(),
+				new JCheckBox(spec.label(), options().getBoolean(spec.option(), spec.defaultValue())));
+		}
+		return boxes;
+	}
+
+	private JComponent[] optionComponents(Map<String, JCheckBox> boxes) {
+		return boxes.values().toArray(JComponent[]::new);
+	}
+
+	private void resetOptionCheckBoxes(Map<String, JCheckBox> boxes, BooleanOptionSpec[] specs) {
+		for (BooleanOptionSpec spec : specs) {
+			JCheckBox box = boxes.get(spec.label());
+			if (box != null) {
+				box.setSelected(spec.defaultValue());
+			}
+		}
+	}
+
+	private void saveOptionCheckBoxes(ToolOptions toolOptions, Map<String, JCheckBox> boxes,
+			BooleanOptionSpec[] specs) {
+		for (BooleanOptionSpec spec : specs) {
+			JCheckBox box = boxes.get(spec.label());
+			if (box != null) {
+				toolOptions.setBoolean(spec.option(), box.isSelected());
+			}
+		}
+	}
+
+	private void setOptionDefaults(ToolOptions toolOptions, BooleanOptionSpec[] specs) {
+		for (BooleanOptionSpec spec : specs) {
+			toolOptions.setBoolean(spec.option(), spec.defaultValue());
+		}
+	}
+
 	private void resetParadiseLayoutDefaults() {
 		ToolOptions toolOptions = options();
 		toolOptions.setString(OPTION_THEME_PRESET, THEME_LIGHT);
@@ -1847,27 +1830,10 @@ public class ParadisePlugin extends ProgramPlugin {
 		toolOptions.setBoolean(OPTION_SHOW_LINE_NUMBERS, DEFAULT_SHOW_LINE_NUMBERS);
 		toolOptions.setBoolean(OPTION_SHOW_TOKEN_ADDRESSES, DEFAULT_SHOW_TOKEN_ADDRESSES);
 		toolOptions.setBoolean(OPTION_SHOW_AUX_PANELS, DEFAULT_SHOW_AUX_PANELS);
-		toolOptions.setBoolean(OPTION_VIEW_XREFS, DEFAULT_SHOW_AUX_TAB);
-		toolOptions.setBoolean(OPTION_VIEW_LOCALS, DEFAULT_SHOW_AUX_TAB);
-		toolOptions.setBoolean(OPTION_VIEW_TRACE, DEFAULT_SHOW_AUX_TAB);
-		toolOptions.setBoolean(OPTION_VIEW_CALLS, DEFAULT_SHOW_AUX_TAB);
-		toolOptions.setBoolean(OPTION_VIEW_STRINGS, DEFAULT_SHOW_AUX_TAB);
-		toolOptions.setBoolean(OPTION_VIEW_DIFF, DEFAULT_SHOW_AUX_TAB);
-		toolOptions.setBoolean(OPTION_VIEW_DRAFTS, DEFAULT_SHOW_AUX_TAB);
-		toolOptions.setBoolean(OPTION_VIEW_SUGGESTIONS, DEFAULT_SHOW_AUX_TAB);
-		toolOptions.setBoolean(OPTION_VIEW_TRIAGE, DEFAULT_SHOW_AUX_TAB);
-		toolOptions.setBoolean(OPTION_VIEW_CLEANUPS, DEFAULT_SHOW_AUX_TAB);
+		setOptionDefaults(toolOptions, AUX_TAB_OPTIONS);
 		toolOptions.setBoolean(OPTION_VIEW_FINDS_WINDOW, DEFAULT_SHOW_AUX_TAB);
 		toolOptions.setBoolean(OPTION_FIND_MERGE_REPEATED, DEFAULT_FIND_MERGE_REPEATED);
-		toolOptions.setBoolean(OPTION_FIND_COLUMN_PRIORITY, true);
-		toolOptions.setBoolean(OPTION_FIND_COLUMN_COUNT, true);
-		toolOptions.setBoolean(OPTION_FIND_COLUMN_KIND, true);
-		toolOptions.setBoolean(OPTION_FIND_COLUMN_ADDRESS, true);
-		toolOptions.setBoolean(OPTION_FIND_COLUMN_USE, true);
-		toolOptions.setBoolean(OPTION_FIND_COLUMN_SOURCE, true);
-		toolOptions.setBoolean(OPTION_FIND_COLUMN_CHAIN, true);
-		toolOptions.setBoolean(OPTION_FIND_COLUMN_VALUE, true);
-		toolOptions.setBoolean(OPTION_FIND_COLUMN_EVIDENCE, true);
+		setOptionDefaults(toolOptions, FIND_COLUMN_OPTIONS);
 		toolOptions.setString(OPTION_FIND_DETAILS_RENDERER, FIND_DETAILS_SCREEN);
 		toolOptions.setBoolean(OPTION_CURRENT_LINE, DEFAULT_CURRENT_LINE);
 		toolOptions.setBoolean(OPTION_BRACE_MATCHING, DEFAULT_BRACE_MATCHING);
@@ -1976,6 +1942,10 @@ public class ParadisePlugin extends ProgramPlugin {
 		panel.add(Box.createGlue(), gc);
 		gc.gridy++;
 		gc.weighty = 0;
+	}
+
+	private record BooleanOptionSpec(String label, String option, boolean defaultValue,
+			String description) {
 	}
 
 	private ToolOptions options() {

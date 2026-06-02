@@ -18,8 +18,6 @@ import javax.swing.table.DefaultTableModel;
 import javax.swing.table.JTableHeader;
 import javax.swing.table.TableRowSorter;
 import javax.swing.text.*;
-import javax.swing.plaf.basic.BasicSplitPaneDivider;
-import javax.swing.plaf.basic.BasicSplitPaneUI;
 
 import docking.ActionContext;
 import docking.ComponentProvider;
@@ -57,6 +55,47 @@ final class ParadiseDecompilerProvider extends ComponentProvider {
 	private static final Color SEARCH_HIGHLIGHT = new Color(196, 255, 196);
 	private static final String FOOTER_TEXT = "Ghidra's Paradise by zer0base";
 	private static final Pattern IDENTIFIER_PATTERN = Pattern.compile("[A-Za-z_]\\w*");
+	private static final Pattern FALLBACK_STRING_PATTERN =
+		Pattern.compile("\"(?:\\\\.|[^\"\\\\])*\"|'(?:\\\\.|[^'\\\\])+'");
+	private static final Pattern FALLBACK_NUMBER_PATTERN =
+		Pattern.compile("\\b(?:0x[0-9a-fA-F]+|\\d+)\\b");
+	private static final Pattern FALLBACK_TYPE_PATTERN =
+		Pattern.compile("\\b(?:bool|char|double|float|int|int\\d+_t|uint\\d+_t|int8_t|int16_t|int32_t|int64_t|uint8_t|uint16_t|uint32_t|uint64_t|long|short|size_t|uintptr_t|void)\\b");
+	private static final Pattern FALLBACK_FUNCTION_PATTERN =
+		Pattern.compile("\\b[A-Za-z_]\\w*(?=\\s*\\()");
+	private static final Pattern FALLBACK_KEYWORD_PATTERN =
+		Pattern.compile("\\b(?:break|case|continue|default|do|else|for|goto|if|return|sizeof|switch|while)\\b");
+	private static final Pattern FALLBACK_COMMENT_PATTERN =
+		Pattern.compile("(?s)/\\*.*?\\*/|(?m)//.*$");
+	private static final Pattern BYTE_ARRAY_DECLARATION_PATTERN =
+		Pattern.compile("(?s).*\\b(?:uint8_t|byte|char)\\s+\\w+\\s*\\[.*");
+	private static final Pattern SHIFT_ROTATE_MNEMONIC_PATTERN =
+		Pattern.compile("rol|ror|shl|shr|sal|sar");
+	private static final Pattern CRYPTO_TARGET_PATTERN =
+		Pattern.compile(".*(crypt|encrypt|decrypt|hash|sha|md5|aes|rc4|xor).*");
+	private static final Pattern FILE_IO_TARGET_PATTERN =
+		Pattern.compile(".*(fopen|fread|fwrite|read|write|open|close).*");
+	private static final Pattern RISKY_STRING_TARGET_PATTERN =
+		Pattern.compile(".*(strcpy|strncpy|strcat|sprintf|gets|scanf).*");
+	private static final Pattern GENERATED_LOCAL_IDENTIFIER_PATTERN =
+		Pattern.compile("(?:local|param|uVar|iVar|bVar|cVar|sVar|lVar|puVar|pcVar|pbVar|in_FS_OFFSET)_?.*");
+	private static final Pattern GENERATED_SUFFIX_IDENTIFIER_PATTERN =
+		Pattern.compile("[A-Za-z_]\\w*_(?:\\d|[0-9a-fA-F])\\w*");
+	private static final Pattern TYPE_IDENTIFIER_PATTERN =
+		Pattern.compile("(?:u?int(?:8|16|32|64)?_t|size_t|ssize_t|uintptr_t|intptr_t|FILE|bool|byte|undefined\\w*)");
+	private static final Pattern INTERNAL_TYPE_IDENTIFIER_PATTERN = Pattern.compile("_[A-Z]+");
+	private static final String TRACE_INTEGER_LITERAL_REGEX =
+		"(?<![A-Za-z_])[-+]?(?:0x[0-9a-fA-F]+|0b[01]+|\\d+)[uUlL]*\\b";
+	private static final Pattern TRACE_INTEGER_LITERAL_PATTERN =
+		Pattern.compile(TRACE_INTEGER_LITERAL_REGEX);
+	private static final Pattern TRACE_CALL_PATTERN = Pattern.compile("\\b([A-Za-z_]\\w*)\\s*\\(");
+	private static final Pattern INPUT_WRITING_CALL_PATTERN =
+		Pattern.compile(".*(read|scanf|gets|recv).*");
+	private static final Pattern DECLARATION_TYPE_PREFIX_PATTERN =
+		Pattern.compile(".*\\b(?:bool|byte|char|double|float|int|int\\d+_t|uint\\d+_t|long|short|size_t|FILE|undefined\\w*|_BYTE|_DWORD|_QWORD)\\b.*");
+	private static final Pattern RENDERED_STRING_PATTERN =
+		Pattern.compile("\"(?:\\\\.|[^\"\\\\])*\"");
+	private static final Pattern HEX4_PATTERN = Pattern.compile("[0-9A-Fa-f]{4}");
 
 	private final ParadisePlugin plugin;
 	private final JPanel panel = new JPanel(new BorderLayout());
@@ -617,7 +656,7 @@ final class ParadiseDecompilerProvider extends ComponentProvider {
 		installTableNavigation();
 		styleAuxiliaryUi();
 
-		splitPane.setUI(new DottedSplitPaneUi());
+		splitPane.setUI(new ParadiseDottedSplitPaneUi(plugin::darkTheme));
 		splitPane.setDividerSize(11);
 		splitPane.setBorder(BorderFactory.createEmptyBorder());
 		splitPane.setTopComponent(tabs);
@@ -1181,21 +1220,12 @@ final class ParadiseDecompilerProvider extends ComponentProvider {
 
 	private void applyFallbackSyntax(StyledDocument document, String code)
 			throws BadLocationException {
-		applyFallbackPattern(document, code,
-			Pattern.compile("\"(?:\\\\.|[^\"\\\\])*\"|'(?:\\\\.|[^'\\\\])+'"),
-			ClangToken.CONST_COLOR);
-		applyFallbackPattern(document, code,
-			Pattern.compile("\\b(?:0x[0-9a-fA-F]+|\\d+)\\b"), ClangToken.CONST_COLOR);
-		applyFallbackPattern(document, code,
-			Pattern.compile("\\b(?:bool|char|double|float|int|int\\d+_t|uint\\d+_t|int8_t|int16_t|int32_t|int64_t|uint8_t|uint16_t|uint32_t|uint64_t|long|short|size_t|uintptr_t|void)\\b"),
-			ClangToken.TYPE_COLOR);
-		applyFallbackPattern(document, code,
-			Pattern.compile("\\b[A-Za-z_]\\w*(?=\\s*\\()"), ClangToken.FUNCTION_COLOR);
-		applyFallbackPattern(document, code,
-			Pattern.compile("\\b(?:break|case|continue|default|do|else|for|goto|if|return|sizeof|switch|while)\\b"),
-			ClangToken.KEYWORD_COLOR);
-		applyFallbackPattern(document, code,
-			Pattern.compile("(?s)/\\*.*?\\*/|(?m)//.*$"), ClangToken.COMMENT_COLOR);
+		applyFallbackPattern(document, code, FALLBACK_STRING_PATTERN, ClangToken.CONST_COLOR);
+		applyFallbackPattern(document, code, FALLBACK_NUMBER_PATTERN, ClangToken.CONST_COLOR);
+		applyFallbackPattern(document, code, FALLBACK_TYPE_PATTERN, ClangToken.TYPE_COLOR);
+		applyFallbackPattern(document, code, FALLBACK_FUNCTION_PATTERN, ClangToken.FUNCTION_COLOR);
+		applyFallbackPattern(document, code, FALLBACK_KEYWORD_PATTERN, ClangToken.KEYWORD_COLOR);
+		applyFallbackPattern(document, code, FALLBACK_COMMENT_PATTERN, ClangToken.COMMENT_COLOR);
 	}
 
 	private void applyFallbackPattern(StyledDocument document, String code, Pattern pattern,
@@ -2369,7 +2399,7 @@ final class ParadiseDecompilerProvider extends ComponentProvider {
 		if (code.contains("fopen(") || code.contains("fread(") || code.contains("fwrite(")) {
 			hints.add("FILE stream locals detected; consider naming input/output stream variables.");
 		}
-		if (code.matches("(?s).*\\b(?:uint8_t|byte|char)\\s+\\w+\\s*\\[.*")) {
+		if (BYTE_ARRAY_DECLARATION_PATTERN.matcher(code).matches()) {
 			hints.add("Byte/char buffer local detected; inspect whether it is a string or raw buffer.");
 		}
 		if (code.contains("% 4") || code.contains("%4")) {
@@ -2419,7 +2449,7 @@ final class ParadiseDecompilerProvider extends ComponentProvider {
 				rows.add(suggestion(instruction.getAddress(), "XOR operation suspected",
 					text));
 			}
-			else if (mnemonic.matches("rol|ror|shl|shr|sal|sar")) {
+			else if (SHIFT_ROTATE_MNEMONIC_PATTERN.matcher(mnemonic).matches()) {
 				rows.add(suggestion(instruction.getAddress(), "Bit shift/rotate suspected",
 					text));
 			}
@@ -2430,14 +2460,14 @@ final class ParadiseDecompilerProvider extends ComponentProvider {
 			else if (instruction.getFlowType().isCall()) {
 				String target = callTargetName(program, instruction);
 				String lowerTarget = target.toLowerCase(Locale.ROOT);
-				if (lowerTarget.matches(".*(crypt|encrypt|decrypt|hash|sha|md5|aes|rc4|xor).*")) {
+				if (CRYPTO_TARGET_PATTERN.matcher(lowerTarget).matches()) {
 					rows.add(suggestion(instruction.getAddress(),
 						"Crypto-related call suspected", text));
 				}
-				else if (lowerTarget.matches(".*(fopen|fread|fwrite|read|write|open|close).*")) {
+				else if (FILE_IO_TARGET_PATTERN.matcher(lowerTarget).matches()) {
 					rows.add(suggestion(instruction.getAddress(), "File I/O call", text));
 				}
-				else if (lowerTarget.matches(".*(strcpy|strncpy|strcat|sprintf|gets|scanf).*")) {
+				else if (RISKY_STRING_TARGET_PATTERN.matcher(lowerTarget).matches()) {
 					rows.add(suggestion(instruction.getAddress(),
 						"Potentially risky string/input call", text));
 				}
@@ -2671,8 +2701,8 @@ final class ParadiseDecompilerProvider extends ComponentProvider {
 	}
 
 	private boolean looksLikeLocalIdentifier(String identifier) {
-		return identifier.matches("(?:local|param|uVar|iVar|bVar|cVar|sVar|lVar|puVar|pcVar|pbVar|in_FS_OFFSET)_?.*") ||
-			identifier.matches("[A-Za-z_]\\w*_(?:\\d|[0-9a-fA-F])\\w*");
+		return GENERATED_LOCAL_IDENTIFIER_PATTERN.matcher(identifier).matches() ||
+			GENERATED_SUFFIX_IDENTIFIER_PATTERN.matcher(identifier).matches();
 	}
 
 	private String firstIdentifier(String text) {
@@ -2689,8 +2719,8 @@ final class ParadiseDecompilerProvider extends ComponentProvider {
 	}
 
 	private boolean isTypeIdentifier(String identifier) {
-		return identifier.matches("(?:u?int(?:8|16|32|64)?_t|size_t|ssize_t|uintptr_t|intptr_t|FILE|bool|byte|undefined\\w*)") ||
-			identifier.matches("_[A-Z]+");
+		return TYPE_IDENTIFIER_PATTERN.matcher(identifier).matches() ||
+			INTERNAL_TYPE_IDENTIFIER_PATTERN.matcher(identifier).matches();
 	}
 
 	private boolean isCKeyword(String identifier) {
@@ -2734,76 +2764,76 @@ final class ParadiseDecompilerProvider extends ComponentProvider {
 
 	private List<TraceRow> traceRowsFor(PseudocodeTab tab, String variable) {
 		String text = tab.textPane.getText();
-		Pattern identifier = identifierPattern(variable);
+		TracePatterns patterns = TracePatterns.forVariable(variable);
 		TraceState state = new TraceState();
 		List<TraceRow> rows = new ArrayList<>();
 		List<PseudocodeLine> lines = tab.lines.isEmpty() ? buildLinesFromText(text) : tab.lines;
 		for (PseudocodeLine line : lines) {
 			String expression = lineText(text, line).trim();
-			if (expression.isEmpty() || !identifier.matcher(expression).find()) {
+			if (expression.isEmpty() || !patterns.identifier().matcher(expression).find()) {
 				continue;
 			}
-			String role = traceRole(variable, expression);
-			String value = traceValue(variable, expression, role, state);
+			String role = traceRole(patterns, variable, expression);
+			String value = traceValue(patterns, variable, expression, role, state);
 			rows.add(new TraceRow(line.address(), line.number(), line.start(), line.end(), role,
 				expression, value));
 		}
 		return List.copyOf(rows);
 	}
 
-	private String traceRole(String variable, String expression) {
+	private String traceRole(TracePatterns patterns, String variable, String expression) {
 		String clean = stripTrailingComment(expression).trim();
-		if (isDeclarationOf(variable, clean)) {
-			return assignmentRhs(variable, clean) == null ? "declaration" : "init";
+		if (isDeclarationOf(patterns, variable, clean)) {
+			return assignmentRhs(patterns, clean) == null ? "declaration" : "init";
 		}
-		if (matches(clean, "(?:\\+\\+|--)\\s*" + quotedIdentifier(variable) + "\\b") ||
-			matches(clean, quotedIdentifier(variable) + "\\s*(?:\\+\\+|--)")) {
+		if (patterns.increment().matcher(clean).find() ||
+			patterns.postIncrement().matcher(clean).find()) {
 			return "update";
 		}
-		if (matches(clean, quotedIdentifier(variable) + "\\s*(?:<<|>>|[+\\-*/%&|^])?=")) {
+		if (patterns.assignment().matcher(clean).find()) {
 			return clean.contains("^=") || clean.contains("&=") || clean.contains("|=") ?
 				"transform" : "assign";
 		}
-		if (matches(clean, "\\[[^\\]]*" + quotedIdentifier(variable) + "[^\\]]*\\]") ||
-			matches(clean, quotedIdentifier(variable) + "\\s*%")) {
+		if (patterns.indexUse().matcher(clean).find() || patterns.moduloUse().matcher(clean).find()) {
 			return "index";
 		}
 		if (clean.startsWith("if ") || clean.startsWith("if(") || clean.startsWith("while ") ||
 			clean.startsWith("while(") || clean.startsWith("for ") || clean.startsWith("for(")) {
 			return "condition";
 		}
-		if (matches(clean, "&\\s*" + quotedIdentifier(variable) + "\\b")) {
+		if (patterns.addressArgument().matcher(clean).find()) {
 			return "address arg";
 		}
-		if (matches(clean, "\\w+\\s*\\([^;]*" + quotedIdentifier(variable) + "[^;]*\\)")) {
+		if (patterns.functionArgument().matcher(clean).find()) {
 			return "argument";
 		}
 		return "use";
 	}
 
-	private String traceValue(String variable, String expression, String role, TraceState state) {
+	private String traceValue(TracePatterns patterns, String variable, String expression, String role,
+			TraceState state) {
 		String clean = stripTrailingComment(expression).trim();
 		if ("declaration".equals(role)) {
 			state.clear();
 			return "declared; value unknown";
 		}
-		String increment = incrementOperator(variable, clean);
+		String increment = incrementOperator(patterns, clean);
 		if (increment != null) {
 			return applyIncrement(variable, increment, state);
 		}
-		CompoundUpdate compound = compoundUpdate(variable, clean);
+		CompoundUpdate compound = compoundUpdate(patterns, clean);
 		if (compound != null) {
 			return applyUpdate(variable, compound.operator(), compound.rhs(), state);
 		}
-		String rhs = assignmentRhs(variable, clean);
+		String rhs = assignmentRhs(patterns, clean);
 		if (rhs != null) {
-			return applyAssignment(variable, rhs, state);
+			return applyAssignment(patterns, variable, rhs, state);
 		}
-		String modulo = moduloValue(variable, clean, state);
+		String modulo = moduloValue(patterns, variable, clean, state);
 		if (modulo != null) {
 			return modulo;
 		}
-		if (matches(clean, "&\\s*" + quotedIdentifier(variable) + "\\b")) {
+		if (patterns.addressArgument().matcher(clean).find()) {
 			return callByAddressValue(variable, clean, state);
 		}
 		if (state.numericValue != null) {
@@ -2815,7 +2845,8 @@ final class ParadiseDecompilerProvider extends ComponentProvider {
 		return "unknown";
 	}
 
-	private String applyAssignment(String variable, String rhs, TraceState state) {
+	private String applyAssignment(TracePatterns patterns, String variable, String rhs,
+			TraceState state) {
 		String normalized = normalizeTraceExpression(rhs);
 		Long literal = parseTraceInteger(normalized);
 		if (literal != null) {
@@ -2823,7 +2854,7 @@ final class ParadiseDecompilerProvider extends ComponentProvider {
 			state.symbolicValue = Long.toString(literal);
 			return variable + " = " + literal;
 		}
-		DirectUpdate update = directUpdate(variable, normalized);
+		DirectUpdate update = directUpdate(patterns, normalized);
 		if (update != null) {
 			return applyUpdate(variable, update.operator(), update.rhs(), state);
 		}
@@ -2871,9 +2902,9 @@ final class ParadiseDecompilerProvider extends ComponentProvider {
 		};
 	}
 
-	private String moduloValue(String variable, String expression, TraceState state) {
-		Matcher matcher = Pattern.compile(quotedIdentifier(variable) + "\\s*%\\s*(" +
-			integerLiteralRegex() + ")").matcher(expression);
+	private String moduloValue(TracePatterns patterns, String variable, String expression,
+			TraceState state) {
+		Matcher matcher = patterns.moduloValue().matcher(expression);
 		if (!matcher.find()) {
 			return null;
 		}
@@ -2891,7 +2922,8 @@ final class ParadiseDecompilerProvider extends ComponentProvider {
 	private String callByAddressValue(String variable, String expression, TraceState state) {
 		String call = firstCallName(expression);
 		String prefix = call == null ? "passed by address" : "passed by address to " + call;
-		if (call != null && call.toLowerCase(Locale.ROOT).matches(".*(read|scanf|gets|recv).*")) {
+		if (call != null &&
+			INPUT_WRITING_CALL_PATTERN.matcher(call.toLowerCase(Locale.ROOT)).matches()) {
 			state.clear();
 			return prefix + "; value may be written by the call";
 		}
@@ -2912,17 +2944,16 @@ final class ParadiseDecompilerProvider extends ComponentProvider {
 		return "\\b" + Pattern.quote(identifier) + "\\b";
 	}
 
-	private boolean isDeclarationOf(String variable, String expression) {
-		if (!matches(expression, quotedIdentifier(variable) + "\\s*(?:\\[.*\\])?\\s*(?:=|;)")) {
+	private boolean isDeclarationOf(TracePatterns patterns, String variable, String expression) {
+		if (!patterns.declarationUse().matcher(expression).find()) {
 			return false;
 		}
 		String prefix = expression.substring(0, expression.indexOf(variable)).trim();
-		return prefix.matches(".*\\b(?:bool|byte|char|double|float|int|int\\d+_t|uint\\d+_t|long|short|size_t|FILE|undefined\\w*|_BYTE|_DWORD|_QWORD)\\b.*");
+		return DECLARATION_TYPE_PREFIX_PATTERN.matcher(prefix).matches();
 	}
 
-	private String assignmentRhs(String variable, String expression) {
-		Matcher matcher = Pattern.compile(quotedIdentifier(variable) + "\\s*=\\s*(?!=)(.+)")
-				.matcher(expression);
+	private String assignmentRhs(TracePatterns patterns, String expression) {
+		Matcher matcher = patterns.assignmentRhs().matcher(expression);
 		if (!matcher.find()) {
 			return null;
 		}
@@ -2933,9 +2964,8 @@ final class ParadiseDecompilerProvider extends ComponentProvider {
 		return trimOuterParens(rhs);
 	}
 
-	private CompoundUpdate compoundUpdate(String variable, String expression) {
-		Matcher matcher = Pattern.compile(quotedIdentifier(variable) +
-			"\\s*(<<|>>|[+\\-*/%&|^])=\\s*(.+)").matcher(expression);
+	private CompoundUpdate compoundUpdate(TracePatterns patterns, String expression) {
+		Matcher matcher = patterns.compoundUpdate().matcher(expression);
 		if (!matcher.find()) {
 			return null;
 		}
@@ -2943,35 +2973,32 @@ final class ParadiseDecompilerProvider extends ComponentProvider {
 		return new CompoundUpdate(matcher.group(1), trimOuterParens(rhs));
 	}
 
-	private DirectUpdate directUpdate(String variable, String expression) {
-		Matcher matcher = Pattern.compile(quotedIdentifier(variable) +
-			"\\s*(<<|>>|[+\\-*/%&|^])\\s*(.+)").matcher(trimOuterParens(expression));
+	private DirectUpdate directUpdate(TracePatterns patterns, String expression) {
+		Matcher matcher = patterns.directUpdate().matcher(trimOuterParens(expression));
 		if (!matcher.matches()) {
 			return null;
 		}
 		return new DirectUpdate(matcher.group(1), trimOuterParens(matcher.group(2).trim()));
 	}
 
-	private String incrementOperator(String variable, String expression) {
-		if (matches(expression, "(?:\\+\\+\\s*" + quotedIdentifier(variable) + "|" +
-			quotedIdentifier(variable) + "\\s*\\+\\+)")) {
+	private String incrementOperator(TracePatterns patterns, String expression) {
+		if (patterns.incrementOnly().matcher(expression).find()) {
 			return "++";
 		}
-		if (matches(expression, "(?:--\\s*" + quotedIdentifier(variable) + "|" +
-			quotedIdentifier(variable) + "\\s*--)")) {
+		if (patterns.decrementOnly().matcher(expression).find()) {
 			return "--";
 		}
 		return null;
 	}
 
 	private String firstCallName(String expression) {
-		Matcher matcher = Pattern.compile("\\b([A-Za-z_]\\w*)\\s*\\(").matcher(expression);
+		Matcher matcher = TRACE_CALL_PATTERN.matcher(expression);
 		return matcher.find() ? matcher.group(1) : null;
 	}
 
 	private String normalizeTraceExpression(String expression) {
 		String normalized = trimOuterParens(expression.trim());
-		Matcher matcher = Pattern.compile(integerLiteralRegex()).matcher(normalized);
+		Matcher matcher = TRACE_INTEGER_LITERAL_PATTERN.matcher(normalized);
 		StringBuffer buffer = new StringBuffer();
 		while (matcher.find()) {
 			Long value = parseTraceInteger(matcher.group());
@@ -3026,17 +3053,9 @@ final class ParadiseDecompilerProvider extends ComponentProvider {
 		return depth == 0;
 	}
 
-	private String integerLiteralRegex() {
-		return "(?<![A-Za-z_])[-+]?(?:0x[0-9a-fA-F]+|0b[01]+|\\d+)[uUlL]*\\b";
-	}
-
 	private String stripTrailingComment(String expression) {
 		int comment = expression.indexOf("//");
 		return comment < 0 ? expression : expression.substring(0, comment);
-	}
-
-	private boolean matches(String text, String regex) {
-		return Pattern.compile(regex).matcher(text).find();
 	}
 
 	private String lineText(String text, PseudocodeLine line) {
@@ -3140,7 +3159,7 @@ final class ParadiseDecompilerProvider extends ComponentProvider {
 
 	private List<String> renderedStrings(ParadiseDecompileResult result, int max) {
 		List<String> strings = new ArrayList<>();
-		Matcher matcher = Pattern.compile("\"(?:\\\\.|[^\"\\\\])*\"").matcher(result.code());
+		Matcher matcher = RENDERED_STRING_PATTERN.matcher(result.code());
 		while (matcher.find() && strings.size() < max) {
 			String value = matcher.group();
 			if (!strings.contains(value)) {
@@ -3336,9 +3355,9 @@ final class ParadiseDecompilerProvider extends ComponentProvider {
 				case 'u' -> {
 					if (i + 4 < text.length() - 1) {
 						String hex = text.substring(i + 1, i + 5);
-						if (hex.matches("[0-9A-Fa-f]{4}")) {
-							builder.append((char) Integer.parseInt(hex, 16));
-							i += 4;
+							if (HEX4_PATTERN.matcher(hex).matches()) {
+								builder.append((char) Integer.parseInt(hex, 16));
+								i += 4;
 						}
 						else {
 							builder.append('u');
@@ -4061,48 +4080,6 @@ final class ParadiseDecompilerProvider extends ComponentProvider {
 		}
 	}
 
-	private final class DottedSplitPaneUi extends BasicSplitPaneUI {
-		@Override
-		public BasicSplitPaneDivider createDefaultDivider() {
-			return new BasicSplitPaneDivider(this) {
-				@Override
-				public void paint(Graphics g) {
-					Graphics2D g2 = (Graphics2D) g.create();
-					try {
-						boolean dark = plugin.darkTheme();
-						Color background = dark ? new Color(50, 53, 57) : new Color(225, 225, 218);
-						Color border = dark ? new Color(76, 81, 88) : new Color(185, 185, 178);
-						Color dot = dark ? new Color(142, 149, 160) : new Color(110, 110, 104);
-						int width = getWidth();
-						int height = getHeight();
-						g2.setColor(background);
-						g2.fillRect(0, 0, width, height);
-						g2.setColor(border);
-						g2.drawLine(0, 0, width, 0);
-						g2.drawLine(0, height - 1, width, height - 1);
-						g2.setColor(dot);
-						int cx = width / 2;
-						int cy = height / 2;
-						if (ParadiseDecompilerProvider.this.splitPane.getOrientation() ==
-							JSplitPane.VERTICAL_SPLIT) {
-							for (int dx = -7; dx <= 7; dx += 7) {
-								g2.fillOval(cx + dx - 2, cy - 2, 4, 4);
-							}
-						}
-						else {
-							for (int dy = -7; dy <= 7; dy += 7) {
-								g2.fillOval(cx - 2, cy + dy - 2, 4, 4);
-							}
-						}
-					}
-					finally {
-						g2.dispose();
-					}
-				}
-			};
-		}
-	}
-
 	private static final class PseudocodeTab {
 		private TabKey key;
 		private Function function;
@@ -4204,6 +4181,32 @@ final class ParadiseDecompilerProvider extends ComponentProvider {
 	}
 
 	private record DirectUpdate(String operator, String rhs) {
+	}
+
+	private record TracePatterns(Pattern identifier, Pattern declarationUse, Pattern increment,
+			Pattern postIncrement, Pattern assignment, Pattern indexUse, Pattern moduloUse,
+			Pattern addressArgument, Pattern functionArgument, Pattern assignmentRhs,
+			Pattern compoundUpdate, Pattern directUpdate, Pattern moduloValue,
+			Pattern incrementOnly, Pattern decrementOnly) {
+		private static TracePatterns forVariable(String variable) {
+			String quoted = "\\b" + Pattern.quote(variable) + "\\b";
+			return new TracePatterns(
+				Pattern.compile(quoted),
+				Pattern.compile(quoted + "\\s*(?:\\[.*\\])?\\s*(?:=|;)"),
+				Pattern.compile("(?:\\+\\+|--)\\s*" + quoted + "\\b"),
+				Pattern.compile(quoted + "\\s*(?:\\+\\+|--)"),
+				Pattern.compile(quoted + "\\s*(?:<<|>>|[+\\-*/%&|^])?="),
+				Pattern.compile("\\[[^\\]]*" + quoted + "[^\\]]*\\]"),
+				Pattern.compile(quoted + "\\s*%"),
+				Pattern.compile("&\\s*" + quoted + "\\b"),
+				Pattern.compile("\\w+\\s*\\([^;]*" + quoted + "[^;]*\\)"),
+				Pattern.compile(quoted + "\\s*=\\s*(?!=)(.+)"),
+				Pattern.compile(quoted + "\\s*(<<|>>|[+\\-*/%&|^])=\\s*(.+)"),
+				Pattern.compile(quoted + "\\s*(<<|>>|[+\\-*/%&|^])\\s*(.+)"),
+				Pattern.compile(quoted + "\\s*%\\s*(" + TRACE_INTEGER_LITERAL_REGEX + ")"),
+				Pattern.compile("(?:\\+\\+\\s*" + quoted + "|" + quoted + "\\s*\\+\\+)"),
+				Pattern.compile("(?:--\\s*" + quoted + "|" + quoted + "\\s*--)"));
+		}
 	}
 
 	private static final class TraceState {

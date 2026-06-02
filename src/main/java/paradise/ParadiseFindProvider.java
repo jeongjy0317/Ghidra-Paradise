@@ -1,63 +1,27 @@
 package paradise;
 
 import java.awt.BorderLayout;
-import java.awt.CardLayout;
 import java.awt.Color;
 import java.awt.Component;
-import java.awt.Dimension;
-import java.awt.FlowLayout;
-import java.awt.Font;
 import java.awt.Graphics;
-import java.awt.Graphics2D;
 import java.awt.Toolkit;
 import java.awt.datatransfer.StringSelection;
-import java.awt.event.ActionEvent;
-import java.awt.event.ComponentAdapter;
-import java.awt.event.ComponentEvent;
-import java.awt.event.MouseAdapter;
-import java.awt.event.MouseEvent;
 import java.io.BufferedWriter;
 import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
-import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
 import java.util.function.BooleanSupplier;
-import java.util.regex.Pattern;
 
-import javax.swing.AbstractAction;
 import javax.swing.BorderFactory;
-import javax.swing.Box;
-import javax.swing.BoxLayout;
 import javax.swing.Icon;
-import javax.swing.JButton;
 import javax.swing.JComponent;
 import javax.swing.JFileChooser;
 import javax.swing.JLabel;
-import javax.swing.JMenuItem;
 import javax.swing.JPanel;
-import javax.swing.JPopupMenu;
-import javax.swing.JScrollPane;
 import javax.swing.JSplitPane;
-import javax.swing.JTabbedPane;
-import javax.swing.JTable;
-import javax.swing.JTextArea;
-import javax.swing.JTextField;
-import javax.swing.KeyStroke;
-import javax.swing.RowFilter;
-import javax.swing.SwingUtilities;
-import javax.swing.table.DefaultTableCellRenderer;
-import javax.swing.table.DefaultTableModel;
-import javax.swing.table.JTableHeader;
-import javax.swing.table.TableCellRenderer;
-import javax.swing.table.TableColumn;
-import javax.swing.table.TableRowSorter;
-import javax.swing.plaf.basic.BasicSplitPaneDivider;
-import javax.swing.plaf.basic.BasicSplitPaneUI;
 
 import docking.ActionContext;
 import docking.ComponentProvider;
@@ -73,50 +37,13 @@ import ghidra.util.exception.CancelledException;
 import ghidra.util.task.TaskLauncher;
 
 final class ParadiseFindProvider extends ComponentProvider {
-	private static final ColumnSpec[] COLUMNS = {
-		new ColumnSpec("Priority", 52),
-		new ColumnSpec("Count", 52),
-		new ColumnSpec("Kind", 92),
-		new ColumnSpec("Address", 92),
-		new ColumnSpec("Use", 92),
-		new ColumnSpec("Source", 64),
-		new ColumnSpec("Decode Chain", 118),
-		new ColumnSpec("Value", 360),
-		new ColumnSpec("Evidence", 320)
-	};
-
 	private final ParadisePlugin plugin;
 	private final JPanel panel = new JPanel(new BorderLayout());
 	private final JLabel titleLabel = new JLabel("Paradise Inspector");
 	private final JLabel statusLabel = new JLabel("No scan yet");
-	private final JTabbedPane tabs = new JTabbedPane();
 	private final JSplitPane splitPane = new JSplitPane(JSplitPane.VERTICAL_SPLIT);
-	private final CardLayout detailLayout = new CardLayout();
-	private final JPanel detailCards = new JPanel(detailLayout);
-	private final JTabbedPane detailTabs = new JTabbedPane();
-	private final JTextArea detailArea = new JTextArea("Select an Inspector row to view details.");
-	private final JTextField filterField = new JTextField(18);
-	private final DefaultTableModel overviewModel = model();
-	private final DefaultTableModel urlModel = model();
-	private final DefaultTableModel pathModel = model();
-	private final DefaultTableModel registryModel = model();
-	private final DefaultTableModel shellModel = model();
-	private final DefaultTableModel executeModel = model();
-	private final Map<JTable, List<TableColumn>> tableColumns = new LinkedHashMap<>();
-	private final Map<JTable, TableRowSorter<DefaultTableModel>> tableSorters =
-		new LinkedHashMap<>();
-	private final JTable overviewTable = table(overviewModel);
-	private final JTable urlTable = table(urlModel);
-	private final JTable pathTable = table(pathModel);
-	private final JTable registryTable = table(registryModel);
-	private final JTable shellTable = table(shellModel);
-	private final JTable executeTable = table(executeModel);
-	private List<ParadiseFindScanner.Row> overviewRows = List.of();
-	private List<ParadiseFindScanner.Row> urlRows = List.of();
-	private List<ParadiseFindScanner.Row> pathRows = List.of();
-	private List<ParadiseFindScanner.Row> registryRows = List.of();
-	private List<ParadiseFindScanner.Row> shellRows = List.of();
-	private List<ParadiseFindScanner.Row> executeRows = List.of();
+	private final ParadiseInspectorTables inspectorTables;
+	private final ParadiseInspectorDetails inspectorDetails;
 	private Program lastProgram;
 	private Function lastFunction;
 	private boolean lastWholeProgram;
@@ -124,12 +51,14 @@ final class ParadiseFindProvider extends ComponentProvider {
 	ParadiseFindProvider(ParadisePlugin plugin) {
 		super(plugin.getTool(), "Paradise Inspector", plugin.getName());
 		this.plugin = plugin;
+		inspectorTables = new ParadiseInspectorTables(plugin::showFindColumn, this::updateDetail,
+			this::gotoUsage, this::gotoString, this::copySelected);
+		inspectorDetails = new ParadiseInspectorDetails(this::gotoAddress, this::copyText);
 		setTitle("Paradise Inspector");
 		setWindowMenuGroup("Paradise");
 		setDefaultWindowPosition(WindowPosition.RIGHT);
 		buildUi();
 		installLocalToolbarActions();
-		installNavigation();
 		applyOptions();
 	}
 
@@ -148,18 +77,13 @@ final class ParadiseFindProvider extends ComponentProvider {
 	}
 
 	void applyOptions() {
-		applyColumnOptions(overviewTable);
-		applyColumnOptions(urlTable);
-		applyColumnOptions(pathTable);
-		applyColumnOptions(registryTable);
-		applyColumnOptions(shellTable);
-		applyColumnOptions(executeTable);
-		detailLayout.show(detailCards, plugin.inspectorDetailsScreen() ? "screen" : "text");
+		inspectorTables.applyColumnOptions();
+		inspectorDetails.showScreen(plugin.inspectorDetailsScreen());
 		updateDetail();
 	}
 
 	boolean hasScan() {
-		return lastProgram != null || lastFunction != null || !overviewRows.isEmpty();
+		return lastProgram != null || lastFunction != null || inspectorTables.hasRows();
 	}
 
 	void scanActiveFunction() {
@@ -235,20 +159,7 @@ final class ParadiseFindProvider extends ComponentProvider {
 	}
 
 	private void showRows(List<ParadiseFindScanner.Row> rows, String status) {
-		overviewRows = List.copyOf(rows);
-		urlRows = rows.stream().filter(row -> row.kind().equals("URL")).toList();
-		registryRows = rows.stream().filter(row -> row.kind().equals("Registry")).toList();
-		shellRows = rows.stream().filter(row -> row.kind().equals("Shell")).toList();
-		executeRows = rows.stream().filter(row -> row.kind().equals("Execute")).toList();
-		pathRows = rows.stream().filter(row -> !row.kind().equals("URL") &&
-			!row.kind().equals("Registry") && !row.kind().equals("Shell") &&
-			!row.kind().equals("Execute")).toList();
-		fill(overviewModel, overviewRows);
-		fill(urlModel, urlRows);
-		fill(pathModel, pathRows);
-		fill(registryModel, registryRows);
-		fill(shellModel, shellRows);
-		fill(executeModel, executeRows);
+		inspectorTables.showRows(rows);
 		statusLabel.setText(status);
 		updateDetail();
 		contextChanged();
@@ -259,92 +170,16 @@ final class ParadiseFindProvider extends ComponentProvider {
 		header.setBorder(BorderFactory.createEmptyBorder(3, 8, 3, 8));
 		titleLabel.setFont(titleLabel.getFont().deriveFont(java.awt.Font.BOLD, 13f));
 		header.add(titleLabel, BorderLayout.WEST);
-		header.add(compactFilterPanel(), BorderLayout.EAST);
-		tabs.addTab("Overview", tablePanel(overviewTable));
-		tabs.addTab("URLs", tablePanel(urlTable));
-		tabs.addTab("Paths", tablePanel(pathTable));
-		tabs.addTab("Registry", tablePanel(registryTable));
-		tabs.addTab("Shell", tablePanel(shellTable));
-		tabs.addTab("Execute", tablePanel(executeTable));
-		tabs.addChangeListener(e -> updateDetail());
-		detailArea.setEditable(false);
-		detailArea.setRows(7);
-		detailArea.setLineWrap(true);
-		detailArea.setWrapStyleWord(false);
-		detailArea.setFont(new Font(Font.MONOSPACED, Font.PLAIN, detailArea.getFont().getSize()));
-		splitPane.setUI(new DottedSplitPaneUi());
+		header.add(inspectorTables.compactFilterPanel(), BorderLayout.EAST);
+		splitPane.setUI(new ParadiseDottedSplitPaneUi(plugin::darkTheme));
 		splitPane.setBorder(BorderFactory.createEmptyBorder());
-		splitPane.setTopComponent(tabs);
-		splitPane.setBottomComponent(detailPanel());
+		splitPane.setTopComponent(inspectorTables.tabs());
+		splitPane.setBottomComponent(inspectorDetails.panel());
 		splitPane.setResizeWeight(0.78);
 		splitPane.setDividerSize(11);
 		panel.add(header, BorderLayout.NORTH);
 		panel.add(splitPane, BorderLayout.CENTER);
 		panel.add(statusLabel, BorderLayout.SOUTH);
-	}
-
-	private JPanel detailPanel() {
-		JPanel panel = new JPanel(new BorderLayout());
-		JLabel label = new JLabel("Details");
-		label.setBorder(BorderFactory.createEmptyBorder(2, 4, 2, 4));
-		label.setFont(label.getFont().deriveFont(Font.BOLD));
-		panel.add(label, BorderLayout.NORTH);
-		detailCards.add(detailTabs, "screen");
-		detailCards.add(new JScrollPane(detailArea), "text");
-		panel.add(detailCards, BorderLayout.CENTER);
-		return panel;
-	}
-
-	private JPanel tablePanel(JTable table) {
-		installTableFilter(table);
-		JPanel wrapper = new JPanel(new BorderLayout());
-		wrapper.add(new JScrollPane(table), BorderLayout.CENTER);
-		return wrapper;
-	}
-
-	private JPanel compactFilterPanel() {
-		filterField.putClientProperty("JTextField.placeholderText", "Filter");
-		filterField.setToolTipText("Filter Inspector rows");
-		Dimension fieldSize = new Dimension(160, 22);
-		filterField.setPreferredSize(fieldSize);
-		filterField.setMinimumSize(fieldSize);
-		filterField.addActionListener(e -> applyTableFilter());
-		filterField.getDocument().addDocumentListener(new javax.swing.event.DocumentListener() {
-			@Override
-			public void insertUpdate(javax.swing.event.DocumentEvent e) {
-				applyTableFilter();
-			}
-
-			@Override
-			public void removeUpdate(javax.swing.event.DocumentEvent e) {
-				applyTableFilter();
-			}
-
-			@Override
-			public void changedUpdate(javax.swing.event.DocumentEvent e) {
-				applyTableFilter();
-			}
-		});
-		JPanel filterPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 4, 0));
-		filterPanel.setBorder(BorderFactory.createEmptyBorder());
-		filterPanel.add(filterField);
-		return filterPanel;
-	}
-
-	private void installTableFilter(JTable table) {
-		TableRowSorter<DefaultTableModel> sorter =
-			new TableRowSorter<>((DefaultTableModel) table.getModel());
-		table.setRowSorter(sorter);
-		tableSorters.put(table, sorter);
-	}
-
-	private void applyTableFilter() {
-		String text = filterField.getText();
-		RowFilter<DefaultTableModel, Object> filter = text == null || text.isBlank() ? null
-				: RowFilter.regexFilter("(?i)" + Pattern.quote(text));
-		for (TableRowSorter<DefaultTableModel> sorter : tableSorters.values()) {
-			sorter.setRowFilter(filter);
-		}
 	}
 
 	private void installLocalToolbarActions() {
@@ -360,8 +195,8 @@ final class ParadiseFindProvider extends ComponentProvider {
 			() -> selectedRow() != null, this::gotoString);
 		addToolbarAction("Copy", FindGlyph.COPY, "03_output", "010",
 			() -> selectedRow() != null, this::copySelected);
-		addToolbarAction("Export CSV", FindGlyph.EXPORT, "03_output", "020",
-			() -> !overviewRows.isEmpty(), this::exportCsv);
+			addToolbarAction("Export CSV", FindGlyph.EXPORT, "03_output", "020",
+				() -> !inspectorTables.overviewRows().isEmpty(), this::exportCsv);
 	}
 
 	private void addToolbarAction(String name, FindGlyph glyph, String group, String subgroup,
@@ -383,468 +218,12 @@ final class ParadiseFindProvider extends ComponentProvider {
 		addLocalAction(action);
 	}
 
-	private void installNavigation() {
-		installTableNavigation(overviewTable);
-		installTableNavigation(urlTable);
-		installTableNavigation(pathTable);
-		installTableNavigation(registryTable);
-		installTableNavigation(shellTable);
-		installTableNavigation(executeTable);
-	}
-
-	private void installTableNavigation(JTable table) {
-		JPopupMenu popup = new JPopupMenu();
-		popup.add(item("Goto usage", this::gotoUsage));
-		popup.add(item("Goto string", this::gotoString));
-		popup.addSeparator();
-		popup.add(item("Copy value", this::copySelected));
-		table.getSelectionModel().addListSelectionListener(e -> {
-			if (!e.getValueIsAdjusting()) {
-				updateDetail();
-			}
-		});
-		table.addMouseListener(new MouseAdapter() {
-			@Override
-			public void mouseClicked(MouseEvent e) {
-				if (e.getClickCount() == 2 && SwingUtilities.isLeftMouseButton(e)) {
-					gotoUsage();
-				}
-			}
-
-			@Override
-			public void mousePressed(MouseEvent e) {
-				handlePopup(e);
-			}
-
-			@Override
-			public void mouseReleased(MouseEvent e) {
-				handlePopup(e);
-			}
-
-			private void handlePopup(MouseEvent e) {
-				if (!e.isPopupTrigger()) {
-					return;
-				}
-				int row = table.rowAtPoint(e.getPoint());
-				if (row >= 0) {
-					table.setRowSelectionInterval(row, row);
-				}
-				popup.show(e.getComponent(), e.getX(), e.getY());
-			}
-		});
-		table.getInputMap().put(KeyStroke.getKeyStroke("ENTER"), "gotoUsage");
-		table.getActionMap().put("gotoUsage", new AbstractAction() {
-			@Override
-			public void actionPerformed(ActionEvent e) {
-				gotoUsage();
-			}
-		});
-	}
-
-	private JMenuItem item(String text, Runnable action) {
-		JMenuItem item = new JMenuItem(text);
-		item.addActionListener(e -> action.run());
-		return item;
-	}
-
 	private ParadiseFindScanner.Row selectedRow() {
-		JTable table = selectedTable();
-		List<ParadiseFindScanner.Row> rows = selectedRows();
-		int viewRow = table.getSelectedRow();
-		if (viewRow < 0) {
-			return null;
-		}
-		int row = table.convertRowIndexToModel(viewRow);
-		return row >= 0 && row < rows.size() ? rows.get(row) : null;
-	}
-
-	private JTable selectedTable() {
-		return switch (tabs.getSelectedIndex()) {
-			case 1 -> urlTable;
-			case 2 -> pathTable;
-			case 3 -> registryTable;
-			case 4 -> shellTable;
-			case 5 -> executeTable;
-			default -> overviewTable;
-		};
-	}
-
-	private List<ParadiseFindScanner.Row> selectedRows() {
-		return switch (tabs.getSelectedIndex()) {
-			case 1 -> urlRows;
-			case 2 -> pathRows;
-			case 3 -> registryRows;
-			case 4 -> shellRows;
-			case 5 -> executeRows;
-			default -> overviewRows;
-		};
+		return inspectorTables.selectedRow();
 	}
 
 	private void updateDetail() {
-		ParadiseFindScanner.Row row = selectedRow();
-		detailArea.setText(row == null ? "Select an Inspector row to view details."
-				: detailText(row));
-		detailArea.setCaretPosition(0);
-		detailTabs.removeAll();
-		if (row == null) {
-			JPanel page = detailPage();
-			addDetailSection(page, "Details",
-				List.<Object[]>of(new Object[] { "Status",
-					"Select an Inspector row to view details." }));
-			finishDetailPage(page);
-			detailTabs.addTab("Overview", detailScroll(page));
-			return;
-		}
-		fillDetailScreen(row);
-	}
-
-	private String detailText(ParadiseFindScanner.Row row) {
-		StringBuilder builder = new StringBuilder();
-		appendDetail(builder, "Kind", row.kind());
-		appendDetail(builder, "Priority", row.priority());
-		appendDetail(builder, "Count", row.count());
-		appendDetail(builder, "Address", row.textAddress());
-		appendDetail(builder, "Use", row.useAddress());
-		appendDetail(builder, "Source", row.source());
-		appendDetail(builder, "Decode Chain", row.chain());
-		appendDetail(builder, "Evidence", row.evidence());
-		builder.append('\n');
-		appendDetail(builder, "Value", row.value());
-		if (!Objects.equals(row.rawValue(), row.value())) {
-			appendDetail(builder, "Original", row.rawValue());
-		}
-		builder.append('\n').append("Usages").append('\n');
-		List<ParadiseFindScanner.Usage> usages = row.usages();
-		if (usages.isEmpty()) {
-			builder.append("  none\n");
-			return builder.toString();
-		}
-		for (int i = 0; i < usages.size(); i++) {
-			ParadiseFindScanner.Usage usage = usages.get(i);
-			builder.append("  #").append(i + 1).append('\n');
-			appendDetail(builder, "    Use", usage.useAddress());
-			appendDetail(builder, "    String", usage.textAddress());
-			appendDetail(builder, "    Source", usage.source());
-			appendDetail(builder, "    Decode Chain", usage.chain());
-			appendDetail(builder, "    Evidence", usage.evidence());
-			appendDetail(builder, "    Original", usage.rawValue());
-		}
-		return builder.toString();
-	}
-
-	private void appendDetail(StringBuilder builder, String label, Object value) {
-		builder.append(label).append(": ").append(Objects.toString(value, "")).append('\n');
-	}
-
-	private void fillDetailScreen(ParadiseFindScanner.Row row) {
-		JPanel overviewPage = detailPage();
-		JPanel valuePage = detailPage();
-		JPanel sourcePage = detailPage();
-		JPanel usePage = detailPage();
-		addDetailHeader(overviewPage, "Overview");
-		addDetailSection(overviewPage, "Summary", List.of(
-			new Object[] { "Brief", brief(row) },
-			new Object[] { "Kind", row.kind() },
-			new Object[] { "Priority", row.priority() },
-			new Object[] { "Count", row.count() },
-			new Object[] { "Address", row.textAddress() },
-			new Object[] { "Use", row.useAddress() },
-			new Object[] { "Value", row.value() }));
-		addDetailHeader(sourcePage, "Source");
-		addDetailSection(sourcePage, "Encoding Info", List.of(
-			new Object[] { "Source", row.source() },
-			new Object[] { "Decode Chain", row.chain() },
-			new Object[] { "Steps", decodeStepCount(row.chain()) },
-			new Object[] { "Evidence", row.evidence() }));
-		addDetailSection(sourcePage, "Locations", List.of(
-			new Object[] { "String", row.textAddress() },
-			new Object[] { "Use", row.useAddress() }));
-		addDetailSection(sourcePage, "Raw Data", List.<Object[]>of(
-			new Object[] { "Original", row.rawValue() }));
-		List<Object[]> valueRows = new ArrayList<>();
-		valueRows.add(new Object[] { "Value", row.value() });
-		if (!Objects.equals(row.rawValue(), row.value())) {
-			valueRows.add(new Object[] { "Original", row.rawValue() });
-		}
-		addDetailHeader(valuePage, "Value");
-		addDetailSection(valuePage, "Decoded Text", valueRows, true);
-		List<ParadiseFindScanner.Usage> usages = row.usages();
-		addDetailHeader(usePage, "Use");
-		if (usages.isEmpty()) {
-			addDetailSection(usePage, "Use", List.<Object[]>of(new Object[] { "Status",
-				"No recorded uses" }));
-		}
-		else {
-			for (int i = 0; i < usages.size(); i++) {
-				ParadiseFindScanner.Usage usage = usages.get(i);
-				addDetailSection(usePage, "Use #" + (i + 1), List.of(
-					new Object[] { "Use", usage.useAddress() },
-					new Object[] { "String", usage.textAddress() },
-					new Object[] { "Source", usage.source() },
-					new Object[] { "Decode Chain", usage.chain() },
-					new Object[] { "Evidence", usage.evidence() },
-					new Object[] { "Original", usage.rawValue() }));
-			}
-		}
-		finishDetailPage(overviewPage);
-		finishDetailPage(valuePage);
-		finishDetailPage(sourcePage);
-		finishDetailPage(usePage);
-		detailTabs.addTab("Overview", detailScroll(overviewPage));
-		detailTabs.addTab("Value", detailScroll(valuePage));
-		detailTabs.addTab("Source", detailScroll(sourcePage));
-		detailTabs.addTab("Use", detailScroll(usePage));
-	}
-
-	private String brief(ParadiseFindScanner.Row row) {
-		String source = row.source() == null || row.source().isBlank() ? "raw" : row.source();
-		String chain = row.chain() == null || row.chain().isBlank() ? "no decode chain"
-				: row.chain();
-		return row.kind() + " finding from " + source + " data, " + chain + ".";
-	}
-
-	private int decodeStepCount(String chain) {
-		if (chain == null || chain.isBlank()) {
-			return 0;
-		}
-		int count = 1;
-		for (int i = 0; i < chain.length(); i++) {
-			if (chain.charAt(i) == '>') {
-				count++;
-			}
-		}
-		return count;
-	}
-
-	private JPanel detailPage() {
-		JPanel page = new JPanel();
-		page.setLayout(new BoxLayout(page, BoxLayout.Y_AXIS));
-		page.setBorder(BorderFactory.createEmptyBorder(6, 6, 6, 6));
-		page.setBackground(new Color(244, 245, 247));
-		return page;
-	}
-
-	private JScrollPane detailScroll(JPanel page) {
-		JScrollPane scrollPane = new JScrollPane(page);
-		scrollPane.setBorder(BorderFactory.createEmptyBorder());
-		scrollPane.getVerticalScrollBar().setUnitIncrement(16);
-		scrollPane.getViewport().setBackground(new Color(244, 245, 247));
-		return scrollPane;
-	}
-
-	private void addDetailHeader(JPanel page, String title) {
-		JLabel label = new JLabel(title);
-		label.setFont(label.getFont().deriveFont(Font.BOLD, 15f));
-		label.setBorder(BorderFactory.createEmptyBorder(4, 3, 4, 0));
-		label.setAlignmentX(Component.LEFT_ALIGNMENT);
-		page.add(label);
-	}
-
-	private void addDetailSection(JPanel page, String title, List<Object[]> rows) {
-		addDetailSection(page, title, rows, false);
-	}
-
-	private void addDetailSection(JPanel page, String title, List<Object[]> rows,
-			boolean copyValues) {
-		JPanel section = new JPanel(new BorderLayout());
-		section.setBorder(BorderFactory.createCompoundBorder(
-			BorderFactory.createTitledBorder(title),
-			BorderFactory.createEmptyBorder(5, 6, 7, 6)));
-		section.setAlignmentX(Component.LEFT_ALIGNMENT);
-		section.setBackground(new Color(244, 245, 247));
-		JTable table = detailTable(rows, copyValues);
-		section.add(table.getTableHeader(), BorderLayout.NORTH);
-		section.add(table, BorderLayout.CENTER);
-		installDetailTableSizing(table, section);
-		page.add(section);
-		page.add(Box.createVerticalStrut(6));
-	}
-
-	private JTable detailTable(List<Object[]> rows, boolean copyValues) {
-		DefaultTableModel model = new DefaultTableModel(new String[] { "Field", "Value", "" }, 0) {
-			@Override
-			public boolean isCellEditable(int row, int column) {
-				return false;
-			}
-		};
-		for (Object[] row : rows) {
-			Object value = row.length > 1 ? row[1] : "";
-			Address address = value instanceof Address found ? found : null;
-			model.addRow(new Object[] { Objects.toString(row[0], ""), Objects.toString(value, ""),
-				copyValues ? Objects.toString(value, "") : address });
-		}
-		JTable table = new JTable(model);
-		table.setAutoResizeMode(JTable.AUTO_RESIZE_ALL_COLUMNS);
-		table.setFillsViewportHeight(false);
-		table.setRowHeight(22);
-		table.setShowGrid(true);
-		table.setGridColor(new Color(210, 210, 205));
-		table.setBackground(Color.WHITE);
-		table.setForeground(new Color(24, 24, 24));
-		table.setSelectionBackground(new Color(204, 226, 255));
-		table.setSelectionForeground(Color.BLACK);
-		table.getTableHeader().setReorderingAllowed(false);
-		table.getTableHeader().setBackground(new Color(232, 232, 226));
-		table.getTableHeader().setForeground(new Color(24, 24, 24));
-		table.getTableHeader().setFont(table.getFont().deriveFont(Font.BOLD));
-		TableColumn fieldColumn = table.getColumnModel().getColumn(0);
-		TableColumn valueColumn = table.getColumnModel().getColumn(1);
-		TableColumn actionColumn = table.getColumnModel().getColumn(2);
-		fieldColumn.setPreferredWidth(150);
-		fieldColumn.setMinWidth(96);
-		fieldColumn.setMaxWidth(220);
-		valueColumn.setPreferredWidth(640);
-		valueColumn.setMinWidth(160);
-		actionColumn.setPreferredWidth(78);
-		actionColumn.setMinWidth(72);
-		actionColumn.setMaxWidth(86);
-		table.getColumnModel().getColumn(0).setCellRenderer(new DetailFieldRenderer());
-		table.getColumnModel().getColumn(1).setCellRenderer(new DetailValueRenderer());
-		table.getColumnModel().getColumn(2).setCellRenderer(copyValues ? new DetailCopyRenderer()
-				: new DetailGotoRenderer());
-		table.addMouseListener(new MouseAdapter() {
-			@Override
-			public void mouseClicked(MouseEvent e) {
-				int viewColumn = table.columnAtPoint(e.getPoint());
-				int viewRow = table.rowAtPoint(e.getPoint());
-				if (viewRow < 0 || viewColumn < 0 ||
-					table.convertColumnIndexToModel(viewColumn) != 2) {
-					return;
-				}
-				Object action = model.getValueAt(table.convertRowIndexToModel(viewRow), 2);
-				if (copyValues && action instanceof String value) {
-					copyText(value);
-				}
-				else if (action instanceof Address address) {
-					gotoAddress(address);
-				}
-			}
-		});
-		table.setPreferredScrollableViewportSize(new Dimension(1,
-			table.getTableHeader().getPreferredSize().height + table.getRowHeight() *
-				Math.max(1, rows.size())));
-		return table;
-	}
-
-	private void installDetailTableSizing(JTable table, JPanel section) {
-		Runnable sync = () -> syncDetailTableSize(table, section);
-		table.addComponentListener(new ComponentAdapter() {
-			@Override
-			public void componentResized(ComponentEvent e) {
-				sync.run();
-			}
-		});
-		section.addComponentListener(new ComponentAdapter() {
-			@Override
-			public void componentResized(ComponentEvent e) {
-				sync.run();
-			}
-		});
-		SwingUtilities.invokeLater(sync);
-	}
-
-	private void syncDetailTableSize(JTable table, JPanel section) {
-		int valueWidth = Math.max(80, table.getColumnModel().getColumn(1).getWidth() - 18);
-		JTextArea measure = new JTextArea();
-		measure.setLineWrap(true);
-		measure.setWrapStyleWord(false);
-		measure.setFont(new Font(Font.MONOSPACED, Font.PLAIN, table.getFont().getSize()));
-		for (int row = 0; row < table.getRowCount(); row++) {
-			measure.setText(Objects.toString(table.getValueAt(row, 1), ""));
-			measure.setSize(new Dimension(valueWidth, Short.MAX_VALUE));
-			int height = Math.max(22, measure.getPreferredSize().height + 8);
-			if (table.getRowHeight(row) != height) {
-				table.setRowHeight(row, height);
-			}
-		}
-		int bodyHeight = 0;
-		for (int row = 0; row < table.getRowCount(); row++) {
-			bodyHeight += table.getRowHeight(row);
-		}
-		table.setPreferredSize(new Dimension(table.getPreferredSize().width, bodyHeight));
-		int tableHeight = table.getTableHeader().getPreferredSize().height + bodyHeight;
-		int sectionHeight = tableHeight + section.getInsets().top + section.getInsets().bottom;
-		section.setPreferredSize(new Dimension(section.getPreferredSize().width, sectionHeight));
-		section.setMaximumSize(new Dimension(Integer.MAX_VALUE, sectionHeight));
-		refreshComponentTree(section);
-	}
-
-	private void refreshComponentTree(JComponent component) {
-		try {
-			JComponent.class.getMethod("re" + "val" + "date").invoke(component);
-		}
-		catch (ReflectiveOperationException | SecurityException e) {
-			component.doLayout();
-		}
-		component.repaint();
-	}
-
-	private static final class DetailFieldRenderer extends DefaultTableCellRenderer {
-		@Override
-		public Component getTableCellRendererComponent(JTable table, Object value,
-				boolean selected, boolean focus, int row, int column) {
-			JLabel label = (JLabel) super.getTableCellRendererComponent(table, value, selected,
-				focus, row, column);
-			label.setBorder(BorderFactory.createEmptyBorder(2, 8, 2, 8));
-			label.setFont(label.getFont().deriveFont(Font.BOLD));
-			return label;
-		}
-	}
-
-	private static final class DetailValueRenderer extends JTextArea implements TableCellRenderer {
-		private DetailValueRenderer() {
-			setLineWrap(true);
-			setWrapStyleWord(false);
-			setOpaque(true);
-			setBorder(BorderFactory.createEmptyBorder(2, 8, 2, 8));
-			setFont(new Font(Font.MONOSPACED, Font.PLAIN, getFont().getSize()));
-		}
-
-		@Override
-		public Component getTableCellRendererComponent(JTable table, Object value,
-				boolean selected, boolean focus, int row, int column) {
-			setText(Objects.toString(value, ""));
-			if (selected) {
-				setBackground(table.getSelectionBackground());
-				setForeground(table.getSelectionForeground());
-			}
-			else {
-				setBackground(row % 2 == 0 ? new Color(248, 248, 244)
-						: new Color(255, 255, 252));
-				setForeground(table.getForeground());
-			}
-			return this;
-		}
-	}
-
-	private static final class DetailGotoRenderer extends JButton implements TableCellRenderer {
-		private DetailGotoRenderer() {
-			setText("Goto");
-			setFocusable(false);
-		}
-
-		@Override
-		public Component getTableCellRendererComponent(JTable table, Object value,
-				boolean selected, boolean focus, int row, int column) {
-			setText(value instanceof Address ? "Goto" : "");
-			setEnabled(value instanceof Address);
-			return this;
-		}
-	}
-
-	private static final class DetailCopyRenderer extends JButton implements TableCellRenderer {
-		private DetailCopyRenderer() {
-			setText("Copy");
-			setFocusable(false);
-		}
-
-		@Override
-		public Component getTableCellRendererComponent(JTable table, Object value,
-				boolean selected, boolean focus, int row, int column) {
-			setText(value instanceof String && !((String) value).isEmpty() ? "Copy" : "");
-			setEnabled(value instanceof String && !((String) value).isEmpty());
-			return this;
-		}
+		inspectorDetails.update(selectedRow());
 	}
 
 	private void gotoAddress(Address address) {
@@ -856,14 +235,6 @@ final class ParadiseFindProvider extends ComponentProvider {
 	private void copyText(String value) {
 		Toolkit.getDefaultToolkit().getSystemClipboard()
 				.setContents(new StringSelection(Objects.toString(value, "")), null);
-	}
-
-	private void finishDetailPage(JPanel page) {
-		page.add(Box.createVerticalGlue());
-		if (page.getParent() != null) {
-			page.getParent().doLayout();
-		}
-		page.repaint();
 	}
 
 	private void gotoUsage() {
@@ -904,7 +275,7 @@ final class ParadiseFindProvider extends ComponentProvider {
 			Files.newBufferedWriter(chooser.getSelectedFile().toPath(), StandardCharsets.UTF_8)) {
 			writer.write("Priority,Count,Kind,Address,Use,Source,Decode Chain,Value,Evidence");
 			writer.newLine();
-			for (ParadiseFindScanner.Row row : overviewRows) {
+			for (ParadiseFindScanner.Row row : inspectorTables.overviewRows()) {
 				writer.write(csv(row.priority()));
 				writer.write(',');
 				writer.write(csv(row.count()));
@@ -933,165 +304,6 @@ final class ParadiseFindProvider extends ComponentProvider {
 	private String csv(Object value) {
 		String text = Objects.toString(value, "");
 		return "\"" + text.replace("\"", "\"\"") + "\"";
-	}
-
-	private DefaultTableModel model() {
-		String[] headers = new String[COLUMNS.length];
-		for (int i = 0; i < COLUMNS.length; i++) {
-			headers[i] = COLUMNS[i].title();
-		}
-		return new DefaultTableModel(headers, 0) {
-			@Override
-			public boolean isCellEditable(int row, int column) {
-				return false;
-			}
-		};
-	}
-
-	private JTable table(DefaultTableModel model) {
-		JTable table = new JTable(model);
-		table.setAutoCreateRowSorter(true);
-		table.setAutoResizeMode(JTable.AUTO_RESIZE_OFF);
-		table.setFillsViewportHeight(true);
-		table.setRowHeight(20);
-		JTableHeader header = table.getTableHeader();
-		header.setReorderingAllowed(false);
-		Color tableBg = Color.WHITE;
-		Color tableFg = new Color(24, 24, 24);
-		Color headerBg = new Color(232, 232, 226);
-		Color headerFg = new Color(24, 24, 24);
-		Color selectionBg = new Color(204, 226, 255);
-		Color selectionFg = Color.BLACK;
-		table.setBackground(tableBg);
-		table.setForeground(tableFg);
-		table.setGridColor(new Color(210, 210, 205));
-		table.setSelectionBackground(selectionBg);
-		table.setSelectionForeground(selectionFg);
-		table.setDefaultRenderer(Object.class, new DefaultTableCellRenderer() {
-			@Override
-			public Component getTableCellRendererComponent(JTable table, Object value,
-					boolean selected, boolean focus, int row, int column) {
-				Component component =
-					super.getTableCellRendererComponent(table, value, selected, focus, row, column);
-				if (!selected) {
-					component.setBackground(row % 2 == 0 ? new Color(248, 248, 244)
-							: new Color(255, 255, 252));
-					component.setForeground(tableFg);
-				}
-				else {
-					component.setBackground(selectionBg);
-					component.setForeground(selectionFg);
-				}
-				return component;
-			}
-		});
-		header.setOpaque(true);
-		header.setBackground(headerBg);
-		header.setForeground(headerFg);
-		header.setFont(table.getFont().deriveFont(java.awt.Font.BOLD));
-		header.setDefaultRenderer(new DefaultTableCellRenderer() {
-			@Override
-			public Component getTableCellRendererComponent(JTable table, Object value,
-					boolean selected, boolean focus, int row, int column) {
-				JLabel label = (JLabel) super.getTableCellRendererComponent(table, value, selected,
-					focus, row, column);
-				label.setOpaque(true);
-				label.setBackground(headerBg);
-				label.setForeground(headerFg);
-				label.setFont(table.getFont().deriveFont(java.awt.Font.BOLD));
-				label.setBorder(BorderFactory.createEmptyBorder(2, 4, 2, 4));
-				return label;
-			}
-		});
-		for (int i = 0; i < COLUMNS.length; i++) {
-			setColumnWidth(table, i, COLUMNS[i].width());
-		}
-		List<TableColumn> columns = new ArrayList<>();
-		for (int i = 0; i < table.getColumnModel().getColumnCount(); i++) {
-			columns.add(table.getColumnModel().getColumn(i));
-		}
-		tableColumns.put(table, columns);
-		return table;
-	}
-
-	private void applyColumnOptions(JTable table) {
-		List<TableColumn> columns = tableColumns.get(table);
-		if (columns == null || columns.isEmpty()) {
-			return;
-		}
-		while (table.getColumnModel().getColumnCount() > 0) {
-			table.getColumnModel().removeColumn(table.getColumnModel().getColumn(0));
-		}
-		boolean added = false;
-		for (int i = 0; i < COLUMNS.length; i++) {
-			if (plugin.showFindColumn(COLUMNS[i].title())) {
-				table.getColumnModel().addColumn(columns.get(i));
-				added = true;
-			}
-		}
-		if (!added) {
-			table.getColumnModel().addColumn(columns.get(7));
-		}
-		table.repaint();
-	}
-
-	private void fill(DefaultTableModel model, List<ParadiseFindScanner.Row> rows) {
-		model.setRowCount(0);
-		for (ParadiseFindScanner.Row row : rows) {
-			model.addRow(new Object[] { row.priority(), row.count(), row.kind(),
-				row.textAddress(), row.useAddress(), row.source(), row.chain(), row.value(),
-				row.evidence() });
-		}
-	}
-
-	private void setColumnWidth(JTable table, int column, int width) {
-		table.getColumnModel().getColumn(column).setPreferredWidth(width);
-		table.getColumnModel().getColumn(column).setMinWidth(Math.min(width, 40));
-	}
-
-	private record ColumnSpec(String title, int width) {
-	}
-
-	private final class DottedSplitPaneUi extends BasicSplitPaneUI {
-		@Override
-		public BasicSplitPaneDivider createDefaultDivider() {
-			return new BasicSplitPaneDivider(this) {
-				@Override
-				public void paint(Graphics g) {
-					Graphics2D g2 = (Graphics2D) g.create();
-					try {
-						boolean dark = plugin.darkTheme();
-						Color background = dark ? new Color(50, 53, 57) : new Color(225, 225, 218);
-						Color border = dark ? new Color(76, 81, 88) : new Color(185, 185, 178);
-						Color dot = dark ? new Color(142, 149, 160) : new Color(110, 110, 104);
-						int width = getWidth();
-						int height = getHeight();
-						g2.setColor(background);
-						g2.fillRect(0, 0, width, height);
-						g2.setColor(border);
-						g2.drawLine(0, 0, width, 0);
-						g2.drawLine(0, height - 1, width, height - 1);
-						g2.setColor(dot);
-						int cx = width / 2;
-						int cy = height / 2;
-						if (ParadiseFindProvider.this.splitPane.getOrientation() ==
-							JSplitPane.VERTICAL_SPLIT) {
-							for (int dx = -7; dx <= 7; dx += 7) {
-								g2.fillOval(cx + dx - 2, cy - 2, 4, 4);
-							}
-						}
-						else {
-							for (int dy = -7; dy <= 7; dy += 7) {
-								g2.fillOval(cx - 2, cy + dy - 2, 4, 4);
-							}
-						}
-					}
-					finally {
-						g2.dispose();
-					}
-				}
-			};
-		}
 	}
 
 	private enum FindGlyph {
